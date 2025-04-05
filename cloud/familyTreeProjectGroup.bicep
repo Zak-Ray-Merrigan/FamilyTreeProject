@@ -38,6 +38,33 @@ resource familyTreeConfiguration 'Microsoft.AppConfiguration/configurationStores
   name: 'familyTreeConfiguration'
 }
 
+resource subscriptionId 'Microsoft.AppConfiguration/configurationStores/keyValues@2023-03-01' = {
+  parent: familyTreeConfiguration
+  name: 'SubscriptionId'
+  properties: {
+    contentType: 'text/plain'
+    value: subscription().subscriptionId
+  }
+}
+
+resource resourceGroupName 'Microsoft.AppConfiguration/configurationStores/keyValues@2023-03-01' = {
+  parent: familyTreeConfiguration
+  name: 'ResourceGroupName'
+  properties: {
+    contentType: 'text/plain'
+    value: resourceGroup().name
+  }
+}
+
+resource containerName 'Microsoft.AppConfiguration/configurationStores/keyValues@2023-03-01' = {
+  parent: familyTreeConfiguration
+  name: 'FamilyTreeContainers:Name'
+  properties: {
+    contentType: 'text/plain'
+    value: containerGroupName
+  }
+}
+
 resource acrName 'Microsoft.AppConfiguration/configurationStores/keyValues@2023-03-01' existing = {
   parent: familyTreeConfiguration
   name: 'ContainerRegistry:Name'
@@ -124,77 +151,6 @@ resource familyTreeRegistry 'Microsoft.ContainerRegistry/registries@2024-11-01-p
   name: 'familyTreeRegistry'
 }
 
-resource neo4jContainer 'Microsoft.ContainerInstance/containerGroups@2022-10-01-preview' = {
+resource neo4jContainer 'Microsoft.ContainerInstance/containerGroups@2022-10-01-preview' existing = {
   name: containerGroupName
-  location: resourceGroup().location
-  properties: {
-    osType: 'Linux'
-    restartPolicy: 'OnFailure'
-    ipAddress: {
-      type: 'Public'
-      ports: [
-        {
-          port: 7474
-          protocol: 'TCP'
-        }
-        {
-          port: 7687
-          protocol: 'TCP'
-        }
-      ]
-    }
-    containers: [
-      {
-        name: 'neo4j'
-        properties: {
-          image: '${familyTreeRegistry.properties.loginServer}/family-tree-graph:latest'
-          resources: {
-            requests: {
-              cpu: 1
-              memoryInGB: 2
-            }
-          }
-          ports: [
-            {
-              port: 7474
-              protocol: 'TCP'
-            }
-            {
-              port: 7687
-              protocol: 'TCP'
-            }
-          ]
-          environmentVariables: [
-            {
-              name: 'NEO4J_AUTH'
-              secureValue: neo4jAuthValue
-            }
-          ]
-          volumeMounts: [
-            {
-              name: 'neo4jfiles'
-              mountPath: '/data'
-            }
-          ]
-        }
-      }
-    ]
-    volumes: [
-      {
-        name: 'neo4jfiles'
-        azureFile: {
-          shareName: fileShareName
-          storageAccountName: familyTreeStaticStorage.name
-          storageAccountKey: storageAccountKeyValue
-        }
-      }
-    ]
-    imageRegistryCredentials: [
-      {
-        server: familyTreeRegistry.properties.loginServer
-        username: familyTreeRegistry.listCredentials().username
-        password: familyTreeRegistry.listCredentials().passwords[0].value
-      }
-    ]
-  }
 }
