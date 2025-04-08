@@ -65,6 +65,15 @@ resource containerName 'Microsoft.AppConfiguration/configurationStores/keyValues
   }
 }
 
+resource containerUri 'Microsoft.AppConfiguration/configurationStores/keyValues@2023-03-01' = {
+  parent: familyTreeConfiguration
+  name: 'FamilyTreeContainers:Uri'
+  properties: {
+    contentType: 'text/plain'
+    value: 'bolt://52.154.164.216:7687'
+  }
+}
+
 resource acrName 'Microsoft.AppConfiguration/configurationStores/keyValues@2023-03-01' existing = {
   parent: familyTreeConfiguration
   name: 'ContainerRegistry:Name'
