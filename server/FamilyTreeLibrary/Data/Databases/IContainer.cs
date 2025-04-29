@@ -10,9 +10,10 @@ namespace FamilyTreeLibrary.Data.Databases
         public T this[Guid id]
         {
             get;
-            set;
         }
 
         public void Remove(T item);
+
+        public void UpdateOrCreate(T item);
     }
 }

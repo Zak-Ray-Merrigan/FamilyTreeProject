@@ -34,28 +34,29 @@ namespace FamilyTreeLibrary.Data.Databases
                 FeedResponse<Person> response = feed.ReadNextAsync().Result;
                 return response.Resource.First();
             }
-            set
-            {
-                FindPerson(value, out Guid actualId);
-                if (value.Id != actualId)
-                {
-                    IDictionary<string,BridgeInstance> obj = new Dictionary<string,BridgeInstance>(value.Instance.AsObject)
-                    {
-                        ["id"] = new(actualId.ToString())
-                    };
-                    Person p = new(obj);
-                    container.UpsertItemAsync(p, new PartitionKey(value.BirthName)).Wait();
-                }
-                else
-                {
-                    container.UpsertItemAsync(value, new PartitionKey(value.BirthName)).Wait();
-                }
-            }
         }
 
         public void Remove(Person person)
         {
             container.DeleteItemAsync<Person>(person.Id.ToString(), new PartitionKey(person.BirthName)).Wait();
+        }
+
+        public void UpdateOrCreate(Person p)
+        {
+            FindPerson(p, out Guid actualId);
+            if (p.Id != actualId)
+            {
+                IDictionary<string,BridgeInstance> obj = new Dictionary<string,BridgeInstance>(p.Instance.AsObject)
+                {
+                    ["id"] = new(actualId.ToString())
+                };
+                Person p1 = new(obj);
+                container.UpsertItemAsync(p1, new PartitionKey(p.BirthName)).Wait();
+            }
+            else
+            {
+                container.UpsertItemAsync(p, new PartitionKey(p.BirthName)).Wait();
+            }
         }
 
         private void FindPerson(Person person, out Guid id)

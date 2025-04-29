@@ -3,7 +3,7 @@ using FamilyTreeLibrary.Logging;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace FamilyTreeLibrary.Infrastructure
+namespace FamilyTreeLibrary.Service
 {
     public class FamilyTreeContainerLifecycleService(FamilyTreeContainer container, IExtendedLogger<FamilyTreeContainerLifecycleService> logger) : IHostedService
     {

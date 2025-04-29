@@ -1,16 +1,13 @@
-using System.Diagnostics.CodeAnalysis;
-using FamilyTreeLibrary.Serialization;
-
 namespace FamilyTreeLibrary.Data.Models
 {
-    public readonly struct Content(Line header, Queue<string> subContent) : ICopyable<Content>, IEquatable<Content>
+    public readonly struct Content(Line header, string subContent) : ICopyable<Content>, IEquatable<Content>
     {
         public Line Header
         {
             get => header;
         }
 
-        public Queue<string> SubContent
+        public string SubContent
         {
             get => subContent;
         }
@@ -22,13 +19,7 @@ namespace FamilyTreeLibrary.Data.Models
 
         public bool Equals(Content other)
         {
-            if (Header != other.Header)
-            {
-                return false;
-            }
-            BridgeInstance a = new(SubContent.Select((item) => new BridgeInstance(item)));
-            BridgeInstance b = new(other.SubContent.Select((item) => new BridgeInstance(item)));
-            return a == b;
+            return Header == other.Header && SubContent == other.SubContent;
         }
 
         public override bool Equals(object? obj)
@@ -39,6 +30,11 @@ namespace FamilyTreeLibrary.Data.Models
         public override int GetHashCode()
         {
             return HashCode.Combine(Header, SubContent);
+        }
+
+        public override string ToString()
+        {
+            return $"Header: {Header}\nSubContent:\n{SubContent}";
         }
 
         public static bool operator==(Content a, Content b)

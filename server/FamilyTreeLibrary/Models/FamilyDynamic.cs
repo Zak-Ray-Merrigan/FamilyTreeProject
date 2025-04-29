@@ -1,12 +1,12 @@
 using FamilyTreeLibrary.Data;
 using FamilyTreeLibrary.Serialization;
-using System.Text.Json;
 
 namespace FamilyTreeLibrary.Models
 {
     public class FamilyDynamic : AbstractComparableBridge, IComparable<FamilyDynamic>, ICopyable<FamilyDynamic>, IEquatable<FamilyDynamic>
     {
         private readonly IDictionary<string, BridgeInstance> document;
+        private static readonly IEnumerable<string> requiredAttributes = new HashSet<string>(){"id", "familyDynamicStartDate", "pageTitle"};
 
         public FamilyDynamic(IDictionary<string,BridgeInstance> obj, bool needToGenerateId = false)
         {
@@ -37,6 +37,14 @@ namespace FamilyTreeLibrary.Models
             }
         }
 
+        public string PageTitle
+        {
+            get
+            {
+                return document["pageTitle"].AsString;
+            }
+        }
+
         public BridgeInstance this[string attribute]
         {
             get
@@ -45,6 +53,7 @@ namespace FamilyTreeLibrary.Models
             }
             set
             {
+                FamilyTreeUtils.ValidateExtendedAttributeAccessibility(requiredAttributes, attribute);
                 document[attribute] = value;
             }
         }
@@ -67,15 +76,7 @@ namespace FamilyTreeLibrary.Models
 
         public FamilyDynamic Copy()
         {
-            JsonSerializerOptions options = new()
-            {
-                Converters = {
-                    new BridgeSerializer()
-                },
-                WriteIndented = true
-            };
-            IBridge bridge = JsonSerializer.Deserialize<IBridge>(Instance.ToString(), options) ?? throw new NullReferenceException("Nothing is there.");
-            return new(bridge.Instance.AsObject);
+            return new(document);
         }
 
         public bool Equals(FamilyDynamic? other)
@@ -90,7 +91,7 @@ namespace FamilyTreeLibrary.Models
 
         public override int GetHashCode()
         {
-            return Id.GetHashCode();
+            return HashCode.Combine(FamilyDynamicStartDate, PageTitle);
         }
 
         public override string ToString()

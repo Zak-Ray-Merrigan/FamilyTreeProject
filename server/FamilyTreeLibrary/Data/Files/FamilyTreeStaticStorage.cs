@@ -1,5 +1,6 @@
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
+using FamilyTreeLibrary.Data.Models;
 using FamilyTreeLibrary.Infrastructure.Resource;
 namespace FamilyTreeLibrary.Data.Files
 {
@@ -54,11 +55,11 @@ namespace FamilyTreeLibrary.Data.Files
             return image.Uri.ToString();
         }
 
-        public string UploadTemplate(FileStream templateStream)
+        public string UploadTemplate(FileStream templateStream, InheritedFamilyName inheritedFamilyName)
         {
             BlobServiceClient blobService = new(connectionString);
             BlobContainerClient templateContainer = blobService.GetBlobContainerClient(configuration["Storage:Containers:Templates"]);
-            BlobClient template = templateContainer.GetBlobClient(Guid.NewGuid().ToString() + Path.GetExtension(templateStream.Name));
+            BlobClient template = templateContainer.GetBlobClient($"{inheritedFamilyName}/{DateTime.Now:yyyyMMdd-HHmmss}{Path.GetExtension(templateStream.Name)}");
             template.Upload(templateStream);
             template.SetAccessTier(AccessTier.Cool);
             return template.Uri.ToString();

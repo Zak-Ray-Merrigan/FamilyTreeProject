@@ -1,5 +1,4 @@
 using FamilyTreeLibrary.Enumerators;
-using Microsoft.Identity.Client;
 
 namespace FamilyTreeLibrary.Data.Models
 {
@@ -112,7 +111,8 @@ namespace FamilyTreeLibrary.Data.Models
 
         public readonly override string ToString()
         {
-            return string.Join('.', coordinate) + (coordinate.Length == 0 ? "" : ")");
+            string dotDelimitedCoordinate = string.Join('.', coordinate);
+            return coordinate.Length > 0 ? $"[{dotDelimitedCoordinate}]" : dotDelimitedCoordinate;
         }
 
         public static bool operator ==(HierarchialCoordinate left, HierarchialCoordinate right)

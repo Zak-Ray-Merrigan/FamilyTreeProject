@@ -29,5 +29,4 @@ app.UseHttpsRedirection();
 app.UseAuthorization();
 app.UseCors("AllowSpecificOrigin");
 app.MapControllers();
-FamilyTreeUtils.InitializeLogger();
 app.Run();

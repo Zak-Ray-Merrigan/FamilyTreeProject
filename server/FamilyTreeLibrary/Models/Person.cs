@@ -7,6 +7,7 @@ namespace FamilyTreeLibrary.Models
     public class Person : AbstractComparableBridge, IComparable<Person>, ICopyable<Person>, IEquatable<Person>
     {
         private readonly IDictionary<string, BridgeInstance> document;
+        private static readonly IEnumerable<string> requiredAttributes = ["id", "birthName", "birthDate", "deceasedDate"];
 
         public Person(IDictionary<string, BridgeInstance> instance, bool needToGenerateId = false)
         {
@@ -41,12 +42,7 @@ namespace FamilyTreeLibrary.Models
         {
             get
             {
-                if (!document.TryGetValue("birthDate", out BridgeInstance value))
-                {
-                    value = new();
-                    document["birthDate"] = value;
-                }
-                return value.TryGetString(out string text) ? new(text) : null;
+                return document["birthDate"].TryGetString(out string birthDate) ? new(birthDate) : null;
             }
             set
             {
@@ -58,12 +54,7 @@ namespace FamilyTreeLibrary.Models
         {
             get
             {
-                if (!document.TryGetValue("deceasedDate", out BridgeInstance value))
-                {
-                    value = new();
-                    document["deceasedDate"] = value;
-                }
-                return value.TryGetString(out string text) ? new(text) : null;
+                return document["deceasedDate"].TryGetString(out string deceasedDate) ? new(deceasedDate) : null;
             }
             set
             {
@@ -79,6 +70,7 @@ namespace FamilyTreeLibrary.Models
             }
             set
             {
+                FamilyTreeUtils.ValidateExtendedAttributeAccessibility(requiredAttributes, attribute);
                 document[attribute] = value;
             }
         }
@@ -117,15 +109,7 @@ namespace FamilyTreeLibrary.Models
 
         public Person Copy()
         {
-            JsonSerializerOptions options = new()
-            {
-                Converters = {
-                    new BridgeSerializer()
-                },
-                WriteIndented = true
-            };
-            IBridge bridge = JsonSerializer.Deserialize<IBridge>(Instance.ToString(), options) ?? throw new NullReferenceException("Nothing is there.");
-            return new(bridge.Instance.AsObject);
+            return new(document);
         }
 
         public bool Equals(Person? other)
@@ -140,7 +124,17 @@ namespace FamilyTreeLibrary.Models
 
         public override int GetHashCode()
         {
-            return Id.GetHashCode();
+            bool birthDateDefined = BirthDate is not null;
+            bool deceasedDateDefined = DeceasedDate is not null;
+            if (!(birthDateDefined || deceasedDateDefined))
+            {
+                return BirthName.GetHashCode();
+            }
+            else if (birthDateDefined && !deceasedDateDefined)
+            {
+                return HashCode.Combine(BirthName, BirthDate);
+            }
+            return HashCode.Combine(BirthName, BirthDate, DeceasedDate);
         }
 
         public override string ToString()

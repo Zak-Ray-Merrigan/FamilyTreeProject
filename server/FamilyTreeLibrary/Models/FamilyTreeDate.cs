@@ -1,5 +1,4 @@
 using FamilyTreeLibrary.Serialization;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace FamilyTreeLibrary.Models
@@ -118,15 +117,7 @@ namespace FamilyTreeLibrary.Models
 
         public FamilyTreeDate Copy()
         {
-            JsonSerializerOptions options = new()
-            {
-                Converters = {
-                    new BridgeSerializer()
-                },
-                WriteIndented = true
-            };
-            IBridge bridge = JsonSerializer.Deserialize<IBridge>(ToString(), options) ?? throw new NullReferenceException("Nothing is there.");
-            return new(bridge.Instance.AsString);
+            return Instance.TryGetString(out string value) ? new(value) : new("");
         }
 
         public bool Equals(FamilyTreeDate? other)
@@ -146,7 +137,19 @@ namespace FamilyTreeLibrary.Models
 
         public override string ToString()
         {
-            return base.ToString().Trim('\"');
+            if (day == "" && month == "" && year == "")
+            {
+                return "";
+            }
+            else if (day == "" && month == "")
+            {
+                return year;
+            }
+            else if (day == "")
+            {
+                return $"{month} {year}";
+            }
+            return $"{day} {month} {year}";
         }
 
         private static string InitializeDay(string token)
@@ -185,31 +188,31 @@ namespace FamilyTreeLibrary.Models
         {
             public int Compare(string? x, string? y)
             {
-                return GetHashCode(x!) - GetHashCode(y!);
+                return GetHashCode(x) - GetHashCode(y);
             }
 
             public bool Equals(string? x, string? y)
             {
                 return Compare(x, y) == 0;
             }
-            public int GetHashCode(string obj)
+            public int GetHashCode(string? obj)
             {
-                switch (obj)
+                return obj switch
                 {
-                    case "Jan": return 1;
-                    case "Feb": return 2;
-                    case "Mar": return 3;
-                    case "Apr": return 4;
-                    case "May": return 5;
-                    case "Jun": return 6;
-                    case "Jul": return 7;
-                    case "Aug": return 8;
-                    case "Sep": return 9;
-                    case "Oct": return 10;
-                    case "Nov": return 11;
-                    case "Dec": return 12;
-                    default: return 0;
-                }
+                    "Jan" => 1,
+                    "Feb" => 2,
+                    "Mar" => 3,
+                    "Apr" => 4,
+                    "May" => 5,
+                    "Jun" => 6,
+                    "Jul" => 7,
+                    "Aug" => 8,
+                    "Sep" => 9,
+                    "Oct" => 10,
+                    "Nov" => 11,
+                    "Dec" => 12,
+                    _ => 0,
+                };
             }
         }
     }

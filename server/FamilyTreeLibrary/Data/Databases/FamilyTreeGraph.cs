@@ -1,7 +1,6 @@
 using FamilyTreeLibrary.Data.Models;
 using FamilyTreeLibrary.Infrastructure.Resource;
 using FamilyTreeLibrary.Models;
-using FamilyTreeLibrary.Serialization;
 using Neo4j.Driver;
 
 namespace FamilyTreeLibrary.Data.Databases
@@ -85,21 +84,23 @@ namespace FamilyTreeLibrary.Data.Databases
                 CREATE (n: FamilyTreeNode {
                     id: $id,
                     inheritedFamilyNames: $inheritedFamilyNames,
-                    memberId: $memberId,
-                    inLawId: $inLawId,
-                    dynamicId: $dynamicId
+                    memberId: $memberId";
+            if (node.InLawId.HasValue)
+            {
+                query += @",
+                    inLawId: $inLawId";
+            }
+            if (node.DynamicId.HasValue)
+            {
+                query += @",
+                    dynamicId: $dynamicId";
+            }
+            query += @"
                 });";
             IAsyncSession session = driver.AsyncSession();
             Task.Run(async () =>
             {
-                await session.RunAsync(query, new
-                {
-                    id = node.Id.ToString(),
-                    inheritedFamilyNames = node.InheritedFamilyNames,
-                    memberId = node.MemberId.ToString(),
-                    inLawId = node.InLawId?.ToString() ?? null,
-                    dynamicId = node.DynamicId?.ToString() ?? null
-                });
+                await session.RunAsync(query, node.Vertex);
             }).Wait();
             session.CloseAsync().Wait();
         }
@@ -156,49 +157,58 @@ namespace FamilyTreeLibrary.Data.Databases
             }
         }
 
+        public IEnumerable<FamilyTreeNode> GetRootNodesByFamilyName(string familyName)
+        {
+            string query = @"
+                MATCH (n:FamilyTreeNode)
+                WHERE NOT (():FamilyTreeNode)-[:PARENT_OF]->(n)
+                    AND $inheritedFamilyName IN n.inheritedFamilyNames
+                RETURN n;";
+            IDictionary<string,object> parameters = new Dictionary<string, object>
+            {
+                { "inheritedFamilyName", familyName }
+            };
+
+            IAsyncSession session = driver.AsyncSession();
+            IEnumerable<FamilyTreeNode> result = Task.Run(async () =>
+            {
+                IResultCursor cursor = await session.RunAsync(query, parameters);
+                IList<IRecord> records = await cursor.ToListAsync();
+                return records.Select(record => ToFamilyTreeNode(record.As<INode>()));
+            }).Result;
+
+            session.CloseAsync().Wait();
+            return result;
+        }
+
         public void UpdateNode(FamilyTreeNode node)
         {
             string query = @"
             MATCH (n:FamilyTreeNode {id: $id})
             SET n.inheritedFamilyNames = $inheritedFamilyNames,
-                n.memberId = $memberId,
-                n.inLawId = $inLawId,
-                n.dynamicId = $dynamicId;";
+                n.memberId = $memberId";
+            if (node.InLawId.HasValue)
+            {
+                query += @",
+                    n.inLawId = $inLawId";
+            }
+            if (node.DynamicId.HasValue)
+            {
+                query += @",
+                    n.dynamicId = $dynamicId";
+            }
+            query += ";";
             IAsyncSession session = driver.AsyncSession();
             Task.Run(async() =>
             {
-                await session.RunAsync(query, new
-                {
-                    id = node.Id.ToString(),
-                    inheritedFamilyNames = node.InheritedFamilyNames,
-                    memberId = node.MemberId.ToString(),
-                    inLawId = node.InLawId?.ToString() ?? null,
-                    dynamicId = node.DynamicId?.ToString() ?? null
-                });
+                await session.RunAsync(query, node.Vertex);
             }).Wait();
             session.CloseAsync().Wait();
         }
 
         private static FamilyTreeNode ToFamilyTreeNode(INode node)
         {
-            IReadOnlySet<string> schema = new HashSet<string>()
-            {
-                "id","inheritedFamilyNames","memberId","inLawId","dynamicId"
-            };
-            IReadOnlySet<string> currentSchema = node.Properties.Keys.ToHashSet();
-            if (!currentSchema.Intersect(schema).ToHashSet().SetEquals(schema))
-            {
-                throw new InvalidDataException("This schema is invalid.");
-            }
-            IDictionary<string,BridgeInstance> obj = new Dictionary<string,BridgeInstance>()
-            {
-                ["id"] = new(node.Get<string>("id")),
-                ["inheritedFamilyNames"] = new(node.Get<IEnumerable<string>>("inheritedFamilyNames").Select(f => new BridgeInstance(f))),
-                ["memberId"] = new(node.Get<string>("memberId")),
-                ["inLawId"] = node.TryGet("inLawId", out string inLawId) ? new(inLawId) : new(),
-                ["dynamicId"] = node.TryGet("dynamicId", out string dynamicId) ? new(dynamicId) : new()
-            };
-            return new(obj);
+            return new FamilyTreeNode(new Dictionary<string,object>(node.Properties));
         }
     }
 }
