@@ -1,10 +1,8 @@
-using FamilyTreeLibrary.Models;
-
 namespace FamilyTreeLibrary.Data.Models
 {
     public class Template
     {
-        public required IReadOnlyCollection<Line> Family
+        public required IEnumerable<TemplateLine> Family
         {
             get;
             set;

@@ -2,7 +2,7 @@ using FamilyTreeLibrary.Models;
 
 namespace FamilyTreeLibrary.Data.Models
 {
-    public readonly struct Line(HierarchialCoordinate coordinate, Person member, Person? inLaw = null, FamilyDynamic? familyDynamic = null) : ICopyable<Line>, IEquatable<Line>
+    public readonly struct TemplateLine(HierarchialCoordinate coordinate, Person member, FamilyDynamic familyDynamic, Person? inLaw = null) : ICopyable<TemplateLine>, IEquatable<TemplateLine>
     {
         public HierarchialCoordinate Coordinate
         {
@@ -18,24 +18,24 @@ namespace FamilyTreeLibrary.Data.Models
             get => inLaw;
         }
 
-        public FamilyDynamic? FamilyDynamic
+        public FamilyDynamic FamilyDynamic
         {
             get => familyDynamic;
         }
 
-        public Line Copy()
+        public TemplateLine Copy()
         {
-            return new Line(Coordinate, Member, InLaw, FamilyDynamic);
+            return new TemplateLine(Coordinate, Member, FamilyDynamic, InLaw);
         }
 
-        public bool Equals(Line other)
+        public bool Equals(TemplateLine other)
         {
             return Coordinate == other.Coordinate && Member == other.Member && InLaw == other.InLaw && familyDynamic == other.FamilyDynamic;
         }
 
         public override bool Equals(object? obj)
         {
-            return obj is Line line && Equals(line);
+            return obj is TemplateLine line && Equals(line);
         }
 
         public override int GetHashCode()
@@ -50,14 +50,14 @@ namespace FamilyTreeLibrary.Data.Models
             {
                 representation += $" & {InLaw}";
             }
-            if (FamilyDynamic is not null)
+            if (FamilyDynamic.FamilyDynamicStartDate is not null)
             {
                 representation += $": {FamilyDynamic}";
             }
             return representation;
         }
 
-        public static bool operator==(Line? a, Line? b)
+        public static bool operator==(TemplateLine? a, TemplateLine? b)
         {
             if (!a.HasValue && !b.HasValue)
             {
@@ -74,7 +74,7 @@ namespace FamilyTreeLibrary.Data.Models
             return a is not null && b is not null && a.Value.Equals(b.Value);
         }
 
-        public static bool operator!=(Line? a, Line? b)
+        public static bool operator!=(TemplateLine? a, TemplateLine? b)
         {
             if (!a.HasValue && !b.HasValue)
             {

@@ -29,11 +29,11 @@ namespace FamilyTreeLibrary.Models
             }
         }
 
-        public FamilyTreeDate FamilyDynamicStartDate
+        public FamilyTreeDate? FamilyDynamicStartDate
         {
             get
             {
-                return new(document["familyDynamicStartDate"].AsString);
+                return document.TryGetValue("familyDynamicStartDate", out BridgeInstance familyDynamicStartDate) && familyDynamicStartDate.TryGetString(out string date) ? new(date) : null;
             }
         }
 
@@ -71,7 +71,7 @@ namespace FamilyTreeLibrary.Models
             {
                 return 1;
             }
-            return FamilyDynamicStartDate.CompareTo(p.FamilyDynamicStartDate);
+            return PageTitle.CompareTo(p.PageTitle);
         }
 
         public FamilyDynamic Copy()
@@ -91,12 +91,12 @@ namespace FamilyTreeLibrary.Models
 
         public override int GetHashCode()
         {
-            return HashCode.Combine(FamilyDynamicStartDate, PageTitle);
+            return PageTitle.GetHashCode();
         }
 
         public override string ToString()
         {
-            return FamilyDynamicStartDate.ToString();
+            return FamilyDynamicStartDate?.ToString() ?? "";
         }
     }
 }

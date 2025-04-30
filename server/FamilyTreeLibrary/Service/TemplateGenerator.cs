@@ -16,8 +16,7 @@ namespace FamilyTreeLibrary.Service
     public class TemplateGenerator
     {
         private readonly InheritedFamilyName inheritedFamilyName;
-        private readonly IReadOnlyDictionary<HierarchialCoordinate, FamilyTreeNode> family;
-        private readonly IList<Data.Models.Line> lines;
+        private readonly IEnumerable<TemplateLine> lines;
         private readonly ISet<Person> people;
         private readonly IExtendedLogger<TemplateGenerator> logger;
 
@@ -26,8 +25,7 @@ namespace FamilyTreeLibrary.Service
             this.logger = logger;
             inheritedFamilyName = new(name);
             people = new HashSet<Person>();
-            lines = [];
-            family = GetFamily();
+            lines = GetFamily();
         }
 
         public TemplateGenerator(IExtendedLogger<TemplateGenerator> logger, string name, int id)
@@ -35,8 +33,7 @@ namespace FamilyTreeLibrary.Service
             this.logger = logger;
             inheritedFamilyName = new(name, id);
             people = new SortedSet<Person>();
-            lines = [];
-            family = GetFamily();
+            lines = GetFamily();
         }
 
         private static IDictionary<string,BridgeInstance> DefaultPerson
@@ -87,7 +84,7 @@ namespace FamilyTreeLibrary.Service
             const float representationHeight = 36f;
             float pageHeight = template.GetPageEffectiveArea(PageSize.A4).GetHeight();
             float currentHeight = 0f;
-            foreach (Data.Models.Line line in lines)
+            foreach (TemplateLine line in lines)
             {
                 if (currentHeight + representationHeight > pageHeight)
                 {
@@ -106,7 +103,7 @@ namespace FamilyTreeLibrary.Service
             return new(initialStream.Name, FileMode.Open, FileAccess.Read);
         }
 
-        private Data.Models.Line BuildHeader(Match header, HierarchialCoordinate coordinate)
+        private TemplateLine BuildHeader(Match header, HierarchialCoordinate coordinate)
         {
             logger.LogInformation("The header: \"{headerText}\" is being decomposed and will be located at hierarchial coordinate {coordinate} relative to the family tree.", header, coordinate);
             IReadOnlyDictionary<string,string> headerDecomposition = GetHeaderDecomposition(header);
@@ -139,20 +136,22 @@ namespace FamilyTreeLibrary.Service
                 logger.LogWarning("No birth date recorded for \"{name}\"", member.BirthName);
             }
             Person? inLaw = inLawObj["birthName"].IsString ? FamilyTreeUtils.GetPerson(logger, inheritedFamilyName, people, new(inLawObj, true)) : null;
-            if (inLaw is not null)
+            if (inLaw is null)
+            {
+                familyDynamicObj["pageTitle"] = new($"This is the family of {member.BirthName}.");
+            }
+            else
             {
                 logger.LogInformation("InLaw -> {inLaw}", inLaw);
                 if (inLaw.BirthDate is null)
                 {
                     logger.LogWarning("No birth date recorded for \"{name}\"", inLaw.BirthName);
                 }
+                familyDynamicObj["pageTitle"] = new($"This is the family of {member.BirthName} and {inLaw.BirthName}.");
             }
-            FamilyDynamic? familyDynamic = familyDynamicObj.ContainsKey("familyDynamicStartDate") ? new(familyDynamicObj, true) : null;
-            if (familyDynamic is not null)
-            {
-                logger.LogInformation("FamilyDynamic -> {familyDynamic}", familyDynamic); 
-            }
-            return new(coordinate, member, inLaw, familyDynamic);
+            FamilyDynamic familyDynamic = new(familyDynamicObj, true);
+            logger.LogInformation("FamilyDynamic -> {familyDynamic}", familyDynamic);
+            return new(coordinate, member, familyDynamic, inLaw);
         }
 
         private Queue<Content> GetContents(string whole, int generation, HierarchialCoordinate start)
@@ -168,7 +167,7 @@ namespace FamilyTreeLibrary.Service
             while (headers.TryDequeue(out Match? h1) && h1 is not null)
             {
                 logger.LogDebug("Building {headerText}", h1);
-                Data.Models.Line header = BuildHeader(h1, currentCoordinate.Copy());
+                TemplateLine header = BuildHeader(h1, currentCoordinate.Copy());
                 logger.LogInformation("Header: {header}", header);
                 int startIndex = h1.Index + h1.Length + 1;
                 logger.LogDebug("Begin Index of sub content: {index} (Relative to initial text)", startIndex);
@@ -182,9 +181,9 @@ namespace FamilyTreeLibrary.Service
             return contents;
         }
 
-        private IReadOnlyDictionary<HierarchialCoordinate, FamilyTreeNode> GetFamily()
+        private IEnumerable<TemplateLine> GetFamily()
         {
-            SortedDictionary<HierarchialCoordinate, FamilyTreeNode> family = [];
+            List<TemplateLine> lines = [];
             Stack<Queue<Content>> contents = new();
             logger.LogInformation("Retrieving the family dynamics of {inheritedFamilyName}.", inheritedFamilyName);
             string templateText = ReadTextFile();
@@ -199,19 +198,13 @@ namespace FamilyTreeLibrary.Service
                     logger.LogDebug("\"{header}\" is ready for writing.", content.Header);
                     lines.Add(content.Header);
                     logger.LogDebug("Constructing a node associating: \"{header}\"", content.Header);
-                    ISet<InheritedFamilyName> inheritedFamilyNames = new HashSet<InheritedFamilyName>(){inheritedFamilyName};
-                    Guid memberId = content.Header.Member.Id;
-                    Guid? inLawId = content.Header.InLaw?.Id;
-                    Guid? dynamicId = content.Header.FamilyDynamic?.Id;
-                    family[content.Header.Coordinate] = new(inheritedFamilyNames, memberId, inLawId, dynamicId);
-                    logger.LogDebug("{coordinate}: {node}", content.Header.Coordinate, family[content.Header.Coordinate]);
                     logger.LogDebug("Since this is a pre-order traversal, we consider the children first. This means we have to save the remaining for later.");
                     contents.Push(collection);
                     logger.LogDebug("We are considering the sub content as children.");
                     contents.Push(GetContents(content.SubContent, contents.Count + 1, content.Header.Coordinate.Child));
                 }
             }
-            return family;
+            return lines;
         }
         private IReadOnlyDictionary<string,string> GetHeaderDecomposition(Match m)
         {

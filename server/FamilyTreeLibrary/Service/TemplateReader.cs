@@ -21,7 +21,7 @@ namespace FamilyTreeLibrary.Service
         {
             logger.LogInformation("Given \"{url}\", we are loading the contents in memory.", blobUri);
             logger.LogDebug("Reading {url}...", blobUri);
-            List<Line> family = [];
+            List<TemplateLine> family = [];
             using Stream templateStream = staticStorage.GetStream(blobUri);
             using PdfReader reader = new(templateStream);
             using PdfDocument template = new(reader);
@@ -29,7 +29,7 @@ namespace FamilyTreeLibrary.Service
             int pageCount = template.GetNumberOfPages();
             string containerName = blobUri.Split('/')[^2];
             logger.LogDebug("Inherited Family Name: {familyName}", containerName);
-            BridgeInstance instance = new(containerName);
+            InheritedFamilyName familyName = new(new BridgeInstance(containerName));
             for (int p = 1; p <= pageCount; p++)
             {
                 string pageText = PdfTextExtractor.GetTextFromPage(template.GetPage(p));
@@ -37,20 +37,16 @@ namespace FamilyTreeLibrary.Service
                 string[] pageLines = GetPageLines(pageText);
                 foreach (string pageLine in pageLines)
                 {
-                    Line line = GetLine(pageLine);
-                    ISet<InheritedFamilyName> inheritedFamilyNames = new HashSet<InheritedFamilyName>()
-                    {
-                        new(instance)
-                    };
-                    Person member = FamilyTreeUtils.GetPerson(logger, inheritedFamilyNames.First(), people, line.Member);
-                    Person? inLaw = line.InLaw is null ? null : FamilyTreeUtils.GetPerson(logger, inheritedFamilyNames.First(), people, line.InLaw);
-                    family.Add(new(line.Coordinate, member, inLaw, line.FamilyDynamic));
+                    TemplateLine line = GetLine(pageLine);
+                    Person member = FamilyTreeUtils.GetPerson(logger, familyName, people, line.Member);
+                    Person? inLaw = line.InLaw is null ? null : FamilyTreeUtils.GetPerson(logger, familyName, people, line.InLaw);
+                    family.Add(new(line.Coordinate, member, line.FamilyDynamic, inLaw));
                 }
             }
             return new Template()
             {
                 Family = family,
-                FamilyName = new(instance)
+                FamilyName = familyName
             };
         }
 
@@ -87,7 +83,7 @@ namespace FamilyTreeLibrary.Service
             return results;
         }
 
-        private Line GetLine(string text)
+        private TemplateLine GetLine(string text)
         {
             logger.LogInformation("Line: \"{text}\" is being analyzed.", text);
             char[] splitArgs = ['[',']','(', ')', EN_DASH[0], '&', ':'];
@@ -144,21 +140,21 @@ namespace FamilyTreeLibrary.Service
             {
                 throw new InvalidDataException("The InLaw Birth Name is missing.");
             }
-            Person? inLaw = inLawBirthName.IsString ? new(inLawObj, true) : null;
-            if (familyDynamicObj.TryGetValue("familyDynamicStartDate", out BridgeInstance familyDynamicStartDate))
+            else if (inLawBirthName.IsString)
             {
-                if (!familyDynamicStartDate.IsString)
-                {
-                    throw new InvalidDataException("The Family Dynamic Start Date is missing.");
-                }
-                else if (inLaw is null)
-                {
-                    throw new InvalidOperationException("An InLaw must be exist if a family dynamic is defined.");
-                }
-                familyDynamicObj["pageTitle"] = new($"This is the family of {member.BirthName} and {inLaw.BirthName}.");
+                familyDynamicObj["pageTitle"] = new($"This is the family of {memberBirthName.AsString} and {inLawBirthName.AsString}.");
             }
-            FamilyDynamic? familyDynamic = familyDynamicStartDate.IsString ? new(familyDynamicObj, true) : null;
-            return new(coordinate, member, inLaw, familyDynamic);
+            else
+            {
+                familyDynamicObj["pageTitle"] = new($"This is family of {memberBirthName.AsString}.");
+            }
+            Person? inLaw = inLawBirthName.IsString ? new(inLawObj, true) : null;
+            if (familyDynamicObj.ContainsKey("familyDynamicStartDate") && inLaw is null)
+            {
+                throw new InvalidDataException($"{memberBirthName.AsString} must have an inLaw in order for a family dynamic start date to be defined.");
+            }
+            FamilyDynamic familyDynamic = new(familyDynamicObj, true);
+            return new(coordinate, member, familyDynamic, inLaw);
         }
     }
 }

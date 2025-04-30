@@ -1,8 +1,8 @@
 namespace FamilyTreeLibrary.Data.Models
 {
-    public readonly struct Content(Line header, string subContent) : ICopyable<Content>, IEquatable<Content>
+    public readonly struct Content(TemplateLine header, string subContent) : ICopyable<Content>, IEquatable<Content>
     {
-        public Line Header
+        public TemplateLine Header
         {
             get => header;
         }
