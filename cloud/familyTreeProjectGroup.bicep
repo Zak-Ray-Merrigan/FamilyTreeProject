@@ -151,9 +151,27 @@ resource personContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/con
   name: personContainerName
 }
 
-resource familyDynamicContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-12-01-preview' existing = {
+resource familyDynamicContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-12-01-preview' = {
   parent: familyTreeDocumentDB
   name: familyDynamicContainerName
+  properties: {
+    options: {
+      autoscaleSettings: {
+        maxThroughput: 4000
+      }
+    }
+    resource: {
+      id: familyDynamicContainerName
+      defaultTtl: -1
+      partitionKey: {
+        paths: [
+          '/pageTitle'
+        ]
+        kind: 'Hash'
+        version: 2
+      }
+    }
+  }
 }
 
 resource familyTreeRegistry 'Microsoft.ContainerRegistry/registries@2024-11-01-preview' existing = {
