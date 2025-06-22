@@ -2,7 +2,7 @@ import React, { useContext} from "react";
 import _ from "lodash";
 import FamilyElementDisplay from "./FamilyElementDisplay";
 import ErrorDisplayComponent from "./ErrorDisplayComponent";
-import FamilyTreeSettingsContext from "../models/FamilyTreeSettings";
+import FamilyTreeSettingsContext from "../models/FamilyTreeSettingsContext";
 
 const FamilyTreeDisplay: React.FC = () => {
     const {familyTreeResponse} = useContext(FamilyTreeSettingsContext);

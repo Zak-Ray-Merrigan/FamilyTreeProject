@@ -1,7 +1,7 @@
 import React from "react";
 import FamilyTreeDisplay from "../components/FamilyTreeDisplay";
 import FamilyTreeInput from "../components/FamilyTreeInput";
-import FamilyTreeProvider from "../providers/FamilyTreeSettingsProvider";
+import FamilyTreeProvider from "../providers/FamilyTreeProvider";
 import { useNavigate } from "react-router-dom";
 import Title from "../components/Title";
 const FamilySubTreePage: React.FC = () => {

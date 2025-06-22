@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useState } from "react";
 import _ from "lodash";
 import { FamilyElementContext } from "../models/FamilyElement";
-import PersonInfoElement from "./PersonInfoElementComponent";
+import PersonInfoElement from "./PersonInfoElement";
 import { PersonType } from "../models/personInfoInput";
 import OutputResponse from "../models/outputResponse";
 import { generationNumberOf } from "../Utils";

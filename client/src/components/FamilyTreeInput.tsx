@@ -1,5 +1,5 @@
 import React, {FormEvent, useContext, useState} from "react";
-import FamilyTreeSettingsContext from "../models/FamilyTreeSettings";
+import FamilyTreeSettingsContext from "../models/FamilyTreeSettingsContext";
 import OutputResponse from "../models/outputResponse";
 import FamilyElement, { FamilyElementContext } from "../models/FamilyElement";
 import { getFamilies, viewSubtree } from "../Utils";
