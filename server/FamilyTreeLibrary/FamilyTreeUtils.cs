@@ -1,42 +1,58 @@
-using FamilyTreeLibrary.Data.Models;
-using FamilyTreeLibrary.Infrastructure.Resource;
+﻿using FamilyTreeLibrary.Data.Enumerators;
 using FamilyTreeLibrary.Models;
-using FamilyTreeLibrary.Logging;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
+using Serilog;
+using System.Reflection;
+using System.Text.RegularExpressions;
 
 namespace FamilyTreeLibrary
 {
-    public static class FamilyTreeUtils
+    public static partial class FamilyTreeUtils
     {
-        public static ILoggingBuilder AddFamilyTreeLogger(this ILoggingBuilder builder)
+        public static IConfigurationRoot GetConfiguration()
         {
-            builder.Services.AddSingleton<ILoggerProvider, FamilyTreeLoggerProvider>(sp =>
-            {
-                return new(sp.GetRequiredService<FamilyTreeVault>());
-            });
-            builder.Services.AddTransient(typeof(IExtendedLogger<>), typeof(FamilyTreeLogger<>));
-            return builder;
+            return new ConfigurationBuilder()
+                .AddUserSecrets<FamilyTreeDbSettings>()
+                .Build();
         }
 
-        internal static void ValidateExtendedAttributeAccessibility(IEnumerable<string> requiredAttributes, string attribute)
+        public static void InitializeLogger()
         {
-            if (requiredAttributes.Any((requiredAttribute) => requiredAttribute.Equals(attribute, StringComparison.CurrentCultureIgnoreCase)))
+            string filePath = Path.Combine(GetRootDirectory(),@"resources\Logs\log.txt");
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .WriteTo.File(filePath, rollingInterval: RollingInterval.Day)
+                .CreateLogger();
+        }
+
+        public static void LogMessage(LoggingLevels level, string message)
+        {
+            switch (level)
             {
-                throw new InvalidAttributeException(attribute);
+                case LoggingLevels.Debug: Log.Debug(message); break;
+                case LoggingLevels.Information: Log.Information(message); break;
+                case LoggingLevels.Warning: Log.Warning(message); break;
+                case LoggingLevels.Error: Log.Error(message); break;
+                case LoggingLevels.Fatal: Log.Fatal(message); break;
             }
         }
 
-        internal static Person GetPerson(IExtendedLogger logger, InheritedFamilyName inheritedFamilyName, ISet<Person> people, Person p)
+        [GeneratedRegex(@"^\d+$")]
+        internal static partial Regex NumberPattern();
+
+        [GeneratedRegex(@"^\d+-\d+$")]
+        internal static partial Regex RangePattern();
+        public static string GetRootDirectory()
         {
-            logger.LogDebug("Since every person is unique, we are ensuring uniqueness while consider re-marriages.");
-            if (people.Add(p))
+            Assembly assemblyLocation = Assembly.GetExecutingAssembly();
+            FileInfo file = new(assemblyLocation.Location);
+            DirectoryInfo currentDirectory = file.Directory;
+            while (currentDirectory.Name != "FamilyTreeProject")
             {
-                logger.LogDebug("{person} is part of the {familyName} family.", p, inheritedFamilyName.Name);
-                return p;
+                DirectoryInfo temp = currentDirectory;
+                currentDirectory = temp.Parent;
             }
-            logger.LogDebug("Finding existing person.");
-            return people.First((temp) => temp == p);
+            return currentDirectory.FullName;
         }
     }
 }

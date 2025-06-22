@@ -5,7 +5,6 @@
 /.vscode
 */Logs
 */PDFInputs
-*/secrets
 .hintrc
 cloud/*.bat
 data/credentials.json
@@ -17,6 +16,7 @@ resources/2023PfingstenBookAlternate.pdf
 /client/node_modules
 /client/.pnp
 /client/.pnp.js
+
 /client/package-lock.json
 
 # testing
@@ -24,10 +24,6 @@ resources/2023PfingstenBookAlternate.pdf
 
 # production
 /client/build
-
-cloud/*.bat
-resources/2023PfingstenBookAlternate.pdf
-data/credentials.json
 
 # misc
 .DS_Store
