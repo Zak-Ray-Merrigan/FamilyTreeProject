@@ -1,16 +1,26 @@
-import React from "react";
+import React, { useContext} from "react";
 import _ from "lodash";
-import PartnershipDisplay from "./PartnershipDisplay";
-import useCriticalAttributes from "../hooks/useCriticalAttributes";
-import { Root } from "../Constants";
+import FamilyElementDisplay from "./FamilyElementDisplay";
+import ErrorDisplayComponent from "./ErrorDisplayComponent";
+import FamilyTreeSettingsContext from "../models/FamilyTreeSettings";
 
 const FamilyTreeDisplay: React.FC = () => {
-    const {familyTree, selectedPartnership} = useCriticalAttributes();
-    return _.isEqual(selectedPartnership, Root) ? ( <div>
-            {familyTree.map((partnership) => (
-                <PartnershipDisplay member={partnership.member} inLaw={partnership.inLaw} partnershipDate={partnership.partnershipDate} />
-            ))}
-        </div>) : <PartnershipDisplay member={selectedPartnership.member} inLaw={selectedPartnership.inLaw} partnershipDate={selectedPartnership.partnershipDate} />
+    const {familyTreeResponse} = useContext(FamilyTreeSettingsContext);
+
+    return (
+        <>
+            {!_.isUndefined(familyTreeResponse.problem) && (
+                <ErrorDisplayComponent message={familyTreeResponse.problem.message}/>
+            )}
+            {!_.isUndefined(familyTreeResponse.output) && (
+                <div>
+                    {familyTreeResponse.output.map((family) => (
+                        <FamilyElementDisplay member={family.member} inLaw={family.inLaw} marriageDate={family.marriageDate} />
+                    ))}
+                </div>
+            )}
+        </>
+    );
 };
 
 export default FamilyTreeDisplay;

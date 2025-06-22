@@ -1,33 +1,23 @@
-import React, { useLayoutEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import _ from "lodash";
-import NumberOfGenerations from "../components/NumberOfGenerations";
-import NumberOfPartnerships from "../components/NumberOfPartnerships";
+import React from "react";
+//import GetNumberOfFamiliesComponent from "../components/GetNumberOfFamiliesComponent";
+//import GetNumberOfGenerationsComponent from "../components/GetNumberOfGenerationsComponent";
+import FamilyTreeProvider from "../providers/FamilyTreeSettingsProvider";
 import FamilyTreeInput from "../components/FamilyTreeInput";
 import FamilyTreeDisplay from "../components/FamilyTreeDisplay";
 import SelectedFileProvider from "../providers/SelectedFileProvider";
 import RevertTreeSection from "../components/RevertTreeSection";
-import useCriticalAttributes from "../hooks/useCriticalAttributes";
-
+import Title from "../components/Title";
 const FamilyTreePage: React.FC = () => {
-    const {familyName} = useCriticalAttributes();
-    let navigate = useNavigate();
-
-    useLayoutEffect(() => {
-        if (_.isNull(familyName)) {
-            navigate('/');
-        }
-    }, [familyName, navigate]);
-    
     return (
         <div>
-            <NumberOfPartnerships />
-            <NumberOfGenerations />
+            <Title />
             <SelectedFileProvider>
                 <RevertTreeSection />
             </SelectedFileProvider>
-            <FamilyTreeInput includesEntireTree={true}/>
-            <FamilyTreeDisplay />
+            <FamilyTreeProvider>
+                <FamilyTreeInput includesEntireTree={true}/>
+                <FamilyTreeDisplay />
+            </FamilyTreeProvider>
         </div>
     );
 }

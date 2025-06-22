@@ -1,63 +1,49 @@
-import React, { useEffect} from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useContext, useEffect} from "react";
 import _ from "lodash";
-import ChildrenOfSelectedPartnership from "../components/ChildrenOfSelectedPartnership";
-import ErrorDisplay from "../components/ErrorDisplay";
-import LoadingDisplay from "../components/LoadingDisplay";
-import ParentOfSelectedPartnership from "../components/ParentOfSelectedPartnership";
-import PartnershipInfo from "../components/PartnershipInfo";
+import { FamilyElementContext } from "../models/FamilyElement";
+import ParentOfSelectedElement from "../components/ParentOfSelectedElement";
+import FamilyInfoElement from "../components/FamilyInfoElement";
+import { StringDefault, createURL } from "../Utils";
 import ReportActionsSection from "../components/ReportActionsSection";
-import useCriticalAttributes from "../hooks/useCriticalAttributes";
-import '../styles/FamilyProfilePage.css';
-import { LoadingContext } from "../Enums";
-import { createURL, isSuccess } from "../Utils";
+import ChildrenOfSelectedElement from "../components/ChildrenOfSelectedElement";
+import { useNavigate } from "react-router-dom";
+import TitleContext from "../models/TitleContext";
+import Title from "../components/Title";
+import './FamilyProfilePage.css';
 
 const FamilyProfilePage: React.FC = () => {
-    const {selectedPartnership, titleSetter, updateTitle} = useCriticalAttributes();
+    const {selectedElement} = useContext(FamilyElementContext);
+    const {setTitle} = useContext(TitleContext);
     let navigate = useNavigate();
     useEffect(() => {
-        const handleTitle = async() => {
-            if (!_.isNull(selectedPartnership.member) && !_.isNull(selectedPartnership.inLaw)) {
-                await updateTitle(`This is the family of ${selectedPartnership.member.name} and ${selectedPartnership.inLaw.name}`);
-            }
-            else if (!_.isNull(selectedPartnership.member)) {
-                await updateTitle(`This is the family of ${selectedPartnership.member.name}`);
-            }
-            else {
-                navigate('/family-tree');
-            }
+        if (!_.isEqual(selectedElement.member.name, StringDefault) && !_.isEqual(selectedElement.inLaw.name, StringDefault)) {
+            setTitle(`This is the family of ${selectedElement.member.name} and ${selectedElement.inLaw.name}`);
         }
-        handleTitle();
-    }, [selectedPartnership, titleSetter, navigate, updateTitle]);
+        else if (!_.isEqual(selectedElement.member.name, StringDefault)) {
+            setTitle(`This is the family of ${selectedElement.member.name}`);
+        }
+        else {
+            setTitle('Unknown Family Element');
+        }
+    }, [selectedElement, setTitle]);
 
-    const handleViewSubtree = async() => {
-        if (!_.isNull(selectedPartnership.member) && !_.isNull(selectedPartnership.inLaw)) {
-            await updateTitle(`This is the subtree of ${selectedPartnership.member.name} and ${selectedPartnership.inLaw.name}`);
-            navigate(createURL('/sub-tree', {memberName: selectedPartnership.member.name, inLawName: selectedPartnership.inLaw.name}));
-        }
-        else if (!_.isNull(selectedPartnership.member)) {
-            await updateTitle(`This is the subtree of ${selectedPartnership.member.name}`);
-            navigate(createURL('/sub-tree', {memberName: selectedPartnership.member.name}));
-        }
+    const handleViewSubtree = () => {
+        setTitle(`This is the subtree of ${selectedElement.member.name}`);
+        navigate(createURL('/sub-tree', {memberName: selectedElement.member.name}));
     }
 
     return (
-        <>
-            <LoadingDisplay response={titleSetter} context={LoadingContext.UpdateClientTitle} />
-            <ErrorDisplay response={titleSetter} />
-            {isSuccess(titleSetter) && (
-                <div>
-                    <ParentOfSelectedPartnership/>
-                    <PartnershipInfo/>
-                    <ReportActionsSection />
-                    <ChildrenOfSelectedPartnership />
-                    <div id="family-profile-controls">
-                        <button type="button" className="family-profile-control" onClick={() => navigate('/family-tree')}>Back To Tree</button>
-                        <button type="button" className="family-profile-control" onClick={handleViewSubtree}>View Subtree</button>
-                    </div>
-                </div>
-            )}
-        </>
+        <div>
+            <Title />
+            <ParentOfSelectedElement/>
+            <FamilyInfoElement/>
+            <ReportActionsSection />
+            <ChildrenOfSelectedElement />
+            <div id="family-profile-controls">
+                <button type="button" className="family-profile-control" onClick={() => navigate('/family-tree')}>Back To Tree</button>
+                <button type="button" className="family-profile-control" onClick={handleViewSubtree}>View Subtree</button>
+            </div>
+        </div>
     );
 };
 
