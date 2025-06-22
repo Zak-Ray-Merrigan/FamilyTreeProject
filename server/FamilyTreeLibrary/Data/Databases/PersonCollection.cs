@@ -36,6 +36,22 @@ namespace FamilyTreeLibrary.Data.Databases
             }
         }
 
+        public Person this[string birthName, FamilyTreeDate? birthDate = null, FamilyTreeDate? deceasedDate = null]
+        {
+            get
+            {
+                string query = $"SELECT VALUE p.id FROM {containerName} p WHERE p.birthName = @birthName AND p.birthDate = @birthDate AND p.deceasedDate = @deceasedDate";
+                QueryDefinition definition = new QueryDefinition(query)
+                    .WithParameter("@birthName", new Bridge(birthName))
+                    .WithParameter("@birthDate", birthDate is null ? new Bridge() : birthDate)
+                    .WithParameter("@deceasedDate", deceasedDate is null ? new Bridge() : deceasedDate);
+                using FeedIterator<Person> feed = container.GetItemQueryIterator<Person>(definition);
+                FeedResponse<Person> response = feed.ReadNextAsync().Result;
+                IEnumerable<Person> results  = response.Resource;
+                return results.First();
+            }
+        }
+
         public void Remove(Person person)
         {
             container.DeleteItemAsync<Person>(person.Id.ToString(), new PartitionKey(person.BirthName)).Wait();

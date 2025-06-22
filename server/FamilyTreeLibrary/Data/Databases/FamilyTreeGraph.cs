@@ -38,13 +38,12 @@ namespace FamilyTreeLibrary.Data.Databases
             }
         }
 
-        public void AddParentChildRelationship(FamilyTreeNode parent, FamilyTreeNode child)
+        public void Connect(FamilyTreeNode parent, FamilyTreeNode child)
         {
             string query = @"
                 MATCH (parent:FamilyTreeNode {id: $parentId})
                 MATCH (child:FamilyTreeNode {id: $childId})
-                MERGE (parent)-[:PARENT_OF]->(child)
-                MERGE (child)-[:CHILD_OF]->(parent);";
+                MERGE (parent)-[:PARENT_CHILD]->(child);";
             IAsyncSession session = driver.AsyncSession();
             Task.Run(async() =>
             {
@@ -108,7 +107,7 @@ namespace FamilyTreeLibrary.Data.Databases
         public IEnumerable<FamilyTreeNode> GetChildren(FamilyTreeNode node)
         {
             string query = @"
-                MATCH (parent:FamilyTreeNode {id: $id})-[:PARENT_OF]->(child:FamilyTreeNode)
+                MATCH (parent:FamilyTreeNode {id: $id})-[:PARENT_CHILD]->(child:FamilyTreeNode)
                 RETURN child;";
             IAsyncSession session = driver.AsyncSession();
             try
@@ -130,25 +129,31 @@ namespace FamilyTreeLibrary.Data.Databases
             }
         }
 
-        public FamilyTreeNode? GetParent(FamilyTreeNode node)
+        public IEnumerable<FamilyTreeNode> GetParents(FamilyTreeNode node)
         {
             string query = @"
-                MATCH (parent:FamilyTreeNode)-[:PARENT_OF]->(child:FamilyTreeNode {id: $id})
-                RETURN parent
-                LIMIT 1";
+                MATCH (parent:FamilyTreeNode)-[:PARENT_CHILD]->(child:FamilyTreeNode {id: $id})
+                RETURN parent;";
             IAsyncSession session = driver.AsyncSession();
             try
             {
                 return Task.Run(async() =>
                 {
                     IResultCursor cursor = await session.RunAsync(query, new {id = node.Id.ToString()});
-                    IList<IRecord> records = await cursor.ToListAsync();
-                    if (records.Count == 0)
+                    IReadOnlyList<IRecord> records = await cursor.ToListAsync();
+                    if (records.Count < 1)
                     {
-                        return null;
+                        return [];
                     }
-                    INode parent = records[0]["parent"].As<INode>();
-                    return ToFamilyTreeNode(parent);
+                    else if (records.Count > 2)
+                    {
+                        throw new InvalidOperationException("This node must have at most 2 parents.");
+                    }
+                    return records.Select((record) =>
+                    {
+                        INode parent = record["parent"].As<INode>();
+                        return ToFamilyTreeNode(parent);
+                    });
                 }).Result;
             }
             finally
@@ -157,16 +162,16 @@ namespace FamilyTreeLibrary.Data.Databases
             }
         }
 
-        public IEnumerable<FamilyTreeNode> GetRootNodesByFamilyName(string familyName)
+        public IEnumerable<FamilyTreeNode> GetRootNodesByFamilyName(InheritedFamilyName familyName)
         {
             string query = @"
                 MATCH (n:FamilyTreeNode)
-                WHERE NOT (():FamilyTreeNode)-[:PARENT_OF]->(n)
+                WHERE NOT (():FamilyTreeNode)-[:PARENT_CHILD]->(n)
                     AND $inheritedFamilyName IN n.inheritedFamilyNames
                 RETURN n;";
             IDictionary<string,object> parameters = new Dictionary<string, object>
             {
-                { "inheritedFamilyName", familyName }
+                { "inheritedFamilyName", familyName.ToString() }
             };
 
             IAsyncSession session = driver.AsyncSession();
@@ -179,6 +184,17 @@ namespace FamilyTreeLibrary.Data.Databases
 
             session.CloseAsync().Wait();
             return result;
+        }
+
+        public void RemoveNode(FamilyTreeNode node)
+        {
+            string query = @"MATCH (node:FamilyTreeNode) {id: $id}
+                DETACH DELETE node;";
+            IAsyncSession session = driver.AsyncSession();
+            Task.Run(async() =>
+            {
+                await session.RunAsync(query, node.Id.ToString());
+            });
         }
 
         public void UpdateNode(FamilyTreeNode node)

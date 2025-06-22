@@ -35,27 +35,37 @@ namespace FamilyTreeLibrary.Data.Databases
                 IEnumerable<FamilyDynamic> familyDynamics = response.Resource;
                 return familyDynamics.First();
             }
-            set
+        }
+
+        public FamilyDynamic this[string pageTitle, FamilyTreeDate? familyDynamicStartDate = null]
+        {
+            get
             {
-                FindFamilyDynamic(value, out Guid actualId);
-                if (value.Id != actualId)
+                string query;
+                QueryDefinition queryDefinition;
+                if (familyDynamicStartDate is null)
                 {
-                    FamilyDynamic familyDynamic = new(new Dictionary<string, BridgeInstance>(value.Instance.AsObject)
-                    {
-                        ["id"] = new(actualId.ToString())
-                    });
-                    container.UpsertItemAsync(familyDynamic, new PartitionKey(value.FamilyDynamicStartDate.ToString())).Wait();
+                    query = $"SELECT * FROM {containerName} f WHERE f.pageTitle = @pageTitle";
+                    queryDefinition = new QueryDefinition(query)
+                        .WithParameter("@pageTitle", new Bridge(pageTitle));
                 }
                 else
                 {
-                    container.UpsertItemAsync(value, new PartitionKey(value.FamilyDynamicStartDate.ToString())).Wait();
+                    query = $"SELECT * FROM {containerName} f WHERE f.pageTitle = @pageTitle AND f.familyDynamicStartDate = @familyDynamicStartDate";
+                    queryDefinition = new QueryDefinition(query)
+                        .WithParameter("@pageTitle", new Bridge(pageTitle))
+                        .WithParameter("@familyDynamicStartDate", familyDynamicStartDate);
                 }
+                using FeedIterator<FamilyDynamic> feed = container.GetItemQueryIterator<FamilyDynamic>(queryDefinition);
+                FeedResponse<FamilyDynamic> response = feed.ReadNextAsync().Result;
+                IEnumerable<FamilyDynamic> families = response.Resource;
+                return families.First();
             }
         }
 
         public void Remove(FamilyDynamic familyDynamic)
         {
-            container.DeleteItemAsync<FamilyDynamic>(familyDynamic.Id.ToString(), new PartitionKey(familyDynamic.FamilyDynamicStartDate.ToString())).Wait();
+            container.DeleteItemAsync<FamilyDynamic>(familyDynamic.Id.ToString(), new PartitionKey(familyDynamic.PageTitle)).Wait();
         }
 
         public void UpdateOrCreate(FamilyDynamic familyDynamic)
@@ -67,11 +77,11 @@ namespace FamilyTreeLibrary.Data.Databases
                 {
                     ["id"] = new(actualId.ToString())
                 });
-                container.UpsertItemAsync(familyDynamic1, new PartitionKey(familyDynamic.FamilyDynamicStartDate.ToString())).Wait();
+                container.UpsertItemAsync(familyDynamic1, new PartitionKey(familyDynamic.PageTitle)).Wait();
             }
             else
             {
-                container.UpsertItemAsync(familyDynamic, new PartitionKey(familyDynamic.FamilyDynamicStartDate.ToString())).Wait();
+                container.UpsertItemAsync(familyDynamic, new PartitionKey(familyDynamic.PageTitle)).Wait();
             }
         }
 

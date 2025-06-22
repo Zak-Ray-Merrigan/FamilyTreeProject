@@ -10,45 +10,39 @@ namespace FamilyTreeLibrary.Models
 
         public FamilyTreeNode(IDictionary<string, object> nodeObj)
         {
-            IEnumerable<string> existingAttributes = new HashSet<string>(){"id", "inheritedFamilyNames", "memberId"};
+            IEnumerable<string> existingAttributes = new HashSet<string>(){"id", "inheritedFamilyNames", "memberId", "dynamicId"};
             DataUtils.ValidateRequiredAttributes(existingAttributes, nodeObj.Keys);
-            IEnumerable<string> schema = existingAttributes.Union(new HashSet<string>{"inLawId", "dynamicId"});
+            IEnumerable<string> schema = existingAttributes.Union(new HashSet<string>{"inLawId"});
             vertex = new Dictionary<string,object>(nodeObj.Where((pair) => schema.Contains(pair.Key)));
         }
 
-        public FamilyTreeNode(ISet<InheritedFamilyName> inheritedFamilyNames, Guid memberId, Guid? inLawId = null, Guid? dynamicId = null)
+        public FamilyTreeNode(ISet<InheritedFamilyName> inheritedFamilyNames, Guid memberId, Guid dynamicId, Guid? inLawId = null)
         {
             vertex = new Dictionary<string,object>()
             {
                 ["id"] = Guid.NewGuid().ToString(),
                 ["inheritedFamilyNames"] = ListInheritedFamilyNames(inheritedFamilyNames),
                 ["memberId"] = memberId.ToString(),
+                ["dynamicId"] = dynamicId.ToString()
             };
             if (inLawId.HasValue)
             {
                 vertex["inLawId"] = inLawId.Value.ToString();
             }
-            if (dynamicId.HasValue)
-            {
-                vertex["dynamicId"] = dynamicId.Value.ToString();
-            }
         }
 
-        public FamilyTreeNode(Guid id, ISet<InheritedFamilyName> inheritedFamilyNames, Guid memberId, Guid? inLawId = null, Guid? dynamicId = null)
+        public FamilyTreeNode(Guid id, ISet<InheritedFamilyName> inheritedFamilyNames, Guid memberId, Guid dynamicId, Guid? inLawId = null)
         {
             vertex = new Dictionary<string,object>()
             {
                 ["id"] = id.ToString(),
                 ["inheritedFamilyNames"] = ListInheritedFamilyNames(inheritedFamilyNames),
                 ["memberId"] = memberId.ToString(),
+                ["dynamicId"] = dynamicId.ToString()
             };
             if (inLawId.HasValue)
             {
                 vertex["inLawId"] = inLawId.Value.ToString();
-            }
-            if (dynamicId.HasValue)
-            {
-                vertex["dynamicId"] = dynamicId.Value.ToString();
             }
         }
 
@@ -111,27 +105,12 @@ namespace FamilyTreeLibrary.Models
             }
         }
 
-        public Guid? DynamicId
+        public Guid DynamicId
         {
             get
             {
-                if (!vertex.TryGetValue("dynamicId", out object? dynamicIdValue))
-                {
-                    return null;
-                }
-                string inLawId = dynamicIdValue.ToString() ?? throw new ArgumentNullException(nameof(dynamicIdValue), "DynamicId must be specified, since it exists.");
-                return Guid.Parse(inLawId);
-            }
-            set
-            {
-                if (value.HasValue)
-                {
-                    vertex["dynamicId"] = value.Value.ToString();
-                }
-                else
-                {
-                    vertex.Remove("dynamicId");
-                }
+                string dynamicIdValue = vertex["dynamicId"].ToString() ?? throw new MissingRequiredAttributeException("dynamicId");
+                return Guid.Parse(dynamicIdValue);
             }
         }
 
@@ -173,10 +152,7 @@ namespace FamilyTreeLibrary.Models
             {
                 representation += $" In-Law Id: {InLawId.Value};";
             }
-            if (DynamicId.HasValue)
-            {
-                representation += $" Dynamic Id: {DynamicId.Value}";
-            }
+            representation += $" Dynamic Id: {DynamicId}";
             return representation.TrimEnd(';');
         }
 

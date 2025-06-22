@@ -19,6 +19,14 @@ using IHost host = Host.CreateDefaultBuilder(args)
         services.AddFamilyTreeConfiguration();
         services.AddFamilyTreeVault();
         services.AddFamilyTreeStaticStorage();
+        services.AddSingleton((provider) =>
+        {
+            return new FamilyTreeContainer(provider.GetRequiredService<FamilyTreeConfiguration>());
+        });
+        services.AddHostedService((provider) =>
+        {
+            return new FamilyTreeContainerLifecycleService(provider.GetRequiredService<FamilyTreeContainer>(), provider.GetRequiredService<IExtendedLogger<FamilyTreeContainerLifecycleService>>());
+        });
     })
     .ConfigureLogging((context, logging) =>
     {
@@ -26,6 +34,7 @@ using IHost host = Host.CreateDefaultBuilder(args)
         logging.AddFamilyTreeLogger();
         logging.SetMinimumLevel(LogLevel.Debug);
     }).Build();
+await host.StartAsync();
 IExtendedLogger<Program> logger = host.Services.GetRequiredService<IExtendedLogger<Program>>();
 const string BLOB_URI = "https://familytreestaticstorage.blob.core.windows.net/templates/Pfingsten-1754729228/20250419-154400.pdf";
 try
@@ -37,6 +46,10 @@ catch (Exception ex)
 {
     logger.LogCritical(ex, "{name}: {message}\n{stackTrace}", ex.GetType().Name, ex.Message, ex.StackTrace);
     Console.WriteLine($"{ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+}
+finally
+{
+    await host.StopAsync();
 }
 
 // static string GetBlobUri(FamilyTreeStaticStorage staticStorage, InheritedFamilyName familyName, IExtendedLogger<TemplateGenerator> logger)
