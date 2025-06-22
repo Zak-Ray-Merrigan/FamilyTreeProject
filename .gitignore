@@ -8,7 +8,6 @@
 .hintrc
 cloud/*.bat
 data/credentials.json
-resources/2023PfingstenBookAlternate.pdf
 
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
