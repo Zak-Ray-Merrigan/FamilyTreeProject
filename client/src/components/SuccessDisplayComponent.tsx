@@ -1,13 +1,10 @@
 import React from "react";
 import './SuccessDisplayComponent.css';
+import FamilyTreeApiResponse from "../models/FamilyTreeApiResponse";
 
-interface SuccessResponse {
-    message: string;
-}
-
-const SuccessDisplay: React.FC<SuccessResponse> = (response) => {
+const SuccessDisplay: React.FC<{response: FamilyTreeApiResponse}> = (params) => {
     return (
-        <p className="success">{response.message}</p>
+        <p className="success">{params.response.message}</p>
     );
 };
 

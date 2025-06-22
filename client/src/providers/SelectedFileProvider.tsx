@@ -1,11 +1,11 @@
 import React, { useState } from "react";
-import SelectedFileContext from "../models/SelectedFileContext";
-import { ProviderProps } from "../models/providerProps";
+import SelectedFileContext from "../contexts/SelectedFileContext";
+import { ProviderProps } from "../Types";
 
 const SelectedFileProvider: React.FC<ProviderProps> = ({children}) => {
     const [selectedFile, changeSelectedFile] = useState<File | undefined>(undefined);
     return (
-        <SelectedFileContext.Provider value={{selectedFile: selectedFile, changeSelectedFile: changeSelectedFile}}>
+        <SelectedFileContext.Provider value={{selectedFile, changeSelectedFile}}>
             {children}
         </SelectedFileContext.Provider>
     );

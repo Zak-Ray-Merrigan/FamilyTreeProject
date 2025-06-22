@@ -1,13 +1,23 @@
+/* File: index.css */
+/* Purpose: This file contains global styles for the Family Tree UI application. */
+
+/* Styles for the body element (the main container of the webpage) */
 body {
+  /* Remove default margin */
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  
+  /* Set the primary font for the entire application */
+  font-family: 'Arial';
+  
+  /* Improve text rendering for WebKit browsers (like Chrome and Safari) */
   -webkit-font-smoothing: antialiased;
+  
+  /* Improve text rendering for Firefox */
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Styles for code elements */
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+  /* Set fonts specifically for displaying code */
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
 }

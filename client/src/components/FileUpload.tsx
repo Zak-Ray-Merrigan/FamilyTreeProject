@@ -1,5 +1,5 @@
 import React, { ChangeEvent, useContext } from "react";
-import SelectedFileContext from "../models/SelectedFileContext";
+import SelectedFileContext from "../contexts/SelectedFileContext";
 
 const FileUpload: React.FC = () => {
     const {changeSelectedFile} = useContext(SelectedFileContext);

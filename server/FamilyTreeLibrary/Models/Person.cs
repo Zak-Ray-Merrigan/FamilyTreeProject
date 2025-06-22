@@ -1,182 +1,159 @@
-using FamilyTreeLibrary.Data.Comparers;
-using FamilyTreeLibrary.Exceptions;
-using MongoDB.Bson;
+using FamilyTreeLibrary.Data;
+using FamilyTreeLibrary.Serialization;
+using System.Text.Json;
 
 namespace FamilyTreeLibrary.Models
 {
-    public class Person : ICloneable, IComparable<Person>, IEquatable<Person>
+    public class Person : AbstractComparableBridge, IComparable<Person>, ICopyable<Person>, IEquatable<Person>
     {
-        private FamilyTreeDate deceasedDate;
+        private readonly IDictionary<string, BridgeInstance> document;
+        private static readonly IEnumerable<string> requiredAttributes = ["id", "birthName", "birthDate", "deceasedDate"];
 
-        public Person(string name, FamilyTreeDate birthDate, FamilyTreeDate deceasedDate)
+        public Person(IDictionary<string, BridgeInstance> instance, bool needToGenerateId = false)
         {
-            Name = name;
-            BirthDate = birthDate;
-            DeceasedDate = deceasedDate;
-        }
-
-        public Person(BsonDocument document)
-        {
-            Name = document[nameof(Name)].IsBsonNull ? null : document[nameof(Name)].AsString;
-            BirthDate = document[nameof(BirthDate)].IsBsonNull ? FamilyTreeDate.DefaultDate : new(document[nameof(BirthDate)].AsString);
-            DeceasedDate = document[nameof(DeceasedDate)].IsBsonNull ? FamilyTreeDate.DefaultDate : new(document[nameof(DeceasedDate)].AsString);
-        }
-
-        public Person(string representation)
-        {
-            if (representation is null || representation == "")
+            if (!instance.ContainsKey("id") && !needToGenerateId)
             {
-                Name = null;
-                BirthDate = FamilyTreeDate.DefaultDate;
-                DeceasedDate = FamilyTreeDate.DefaultDate;
+                throw new UniqueIdentifierNotExistsException("An id must be present to uniquely identify a person document.");
             }
-            else
+            document = instance;
+            if (!document.ContainsKey("id"))
             {
-                string[] delimiters = {" (", " - ", ")"};
-                string[] parts = representation.Split(delimiters, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                Name = parts[0];
-                BirthDate = parts.Length == 3 ? new FamilyTreeDate(parts[1]) : FamilyTreeDate.DefaultDate;
-                DeceasedDate = parts.Length == 3 && parts[2] != "Present" ? new FamilyTreeDate(parts[2]) : FamilyTreeDate.DefaultDate;
+                document["id"] = new(Guid.NewGuid().ToString());
             }
         }
-        public string Name
-        {
-            get;
-        }
-        public FamilyTreeDate BirthDate
-        {
-            get;
-            set;
-        }
-        public FamilyTreeDate DeceasedDate
+
+        public Guid Id
         {
             get
             {
-                return deceasedDate;
+                return Guid.Parse(document["id"].AsString);
+            }
+        }
+
+        public string BirthName
+        {
+            get
+            {
+                return document["birthName"].AsString;
+            }
+        }
+
+        public FamilyTreeDate? BirthDate
+        {
+            get
+            {
+                return document["birthDate"].TryGetString(out string birthDate) ? new(birthDate) : null;
             }
             set
             {
-                if (value.CompareTo(FamilyTreeDate.DefaultDate) != 0 && value.CompareTo(BirthDate) < 0)
-                {
-                    throw new DeceasedDateException(this, value);
-                }
-                deceasedDate = value;
+                document["birthDate"] = value is null ? new() : value.Instance;
             }
         }
 
-        public BsonDocument Document
+        public FamilyTreeDate? DeceasedDate
         {
             get
             {
-                Dictionary<string,object> doc = new()
-                {
-                    {nameof(Name), Name is null ? BsonNull.Value : Name},
-                    {nameof(BirthDate), BirthDate == default || BirthDate == FamilyTreeDate.DefaultDate ? 
-                        BsonNull.Value : BirthDate.ToString()},
-                    {nameof(DeceasedDate), DeceasedDate == default || DeceasedDate == FamilyTreeDate.DefaultDate ? 
-                        BsonNull.Value : DeceasedDate.ToString()}
-                };
-                return new(doc);
+                return document["deceasedDate"].TryGetString(out string deceasedDate) ? new(deceasedDate) : null;
+            }
+            set
+            {
+                document["deceasedDate"] = value is null ? new() : value.Instance;
             }
         }
 
-        public static Person EmptyPerson
+        public BridgeInstance this[string attribute]
         {
             get
             {
-                return new(null, FamilyTreeDate.DefaultDate, FamilyTreeDate.DefaultDate);
+                return document[attribute];
+            }
+            set
+            {
+                FamilyTreeUtils.ValidateExtendedAttributeAccessibility(requiredAttributes, attribute);
+                document[attribute] = value;
             }
         }
 
-        public object Clone()
+        public override BridgeInstance Instance => new(document);
+
+        public override int CompareTo(AbstractComparableBridge? other)
         {
-            return new Person(Document);
+            return CompareTo(other as Person);
         }
 
-        public int CompareTo(Person other)
+        public int CompareTo(Person? p)
         {
-            if (other is null)
+            if (p is null)
             {
                 return 1;
             }
-            else if (BirthDate < other.BirthDate)
+            else if (BirthDate < p.BirthDate)
             {
                 return -1;
             }
-            else if (BirthDate > other.BirthDate)
+            else if (BirthDate > p.BirthDate)
             {
                 return 1;
             }
-            else if (DeceasedDate < other.DeceasedDate)
+            else if (DeceasedDate < p.DeceasedDate)
             {
                 return -1;
             }
-            else if (DeceasedDate > other.DeceasedDate)
+            else if (DeceasedDate > p.DeceasedDate)
             {
                 return 1;
             }
-            IComparer<string> nameCompare = new NameComparer();
-            return nameCompare.Compare(Name, other.Name);
+            return BirthName.CompareTo(p.BirthName);
         }
 
-        public override bool Equals(object obj)
+        public Person Copy()
         {
-            return obj is Person other && Equals(other);
+            return new(document);
         }
 
-        public bool Equals(Person other)
+        public bool Equals(Person? other)
         {
-            return CompareTo(other) == 0;
+            return base.Equals(other);
+        }
+
+        public override bool Equals(object? obj)
+        {
+            return base.Equals(obj);
         }
 
         public override int GetHashCode()
         {
-            return HashCode.Combine(BirthDate, DeceasedDate, Name);
+            bool birthDateDefined = BirthDate is not null;
+            bool deceasedDateDefined = DeceasedDate is not null;
+            if (!(birthDateDefined || deceasedDateDefined))
+            {
+                return BirthName.GetHashCode();
+            }
+            else if (birthDateDefined && !deceasedDateDefined)
+            {
+                return HashCode.Combine(BirthName, BirthDate);
+            }
+            return HashCode.Combine(BirthName, BirthDate, DeceasedDate);
         }
 
         public override string ToString()
         {
-            if (Name is not null && BirthDate > FamilyTreeDate.DefaultDate && DeceasedDate > BirthDate)
+            string value = BirthName + " ";
+            const char EN_DASH = '\u2013';
+            if (BirthDate is null && DeceasedDate is null)
             {
-                return $"{Name} ({BirthDate} - {DeceasedDate})";
+                value += $"({EN_DASH})";
             }
-            else if (Name is not null && BirthDate > FamilyTreeDate.DefaultDate)
+            else if (DeceasedDate is null)
             {
-                return $"{Name} ({BirthDate} - Present)";
+                value += $"({BirthDate} {EN_DASH} Present)";
             }
-            else if (Name is not null)
+            else
             {
-                return Name;
+                value += $"({BirthDate} {EN_DASH} {DeceasedDate})";
             }
-            return null;
-        }
-
-        public static bool operator== (Person a, Person b)
-        {
-            bool aIsNull = a is null;
-            bool bIsNull = b is null;
-            return (aIsNull && bIsNull) || (!aIsNull && a.Equals(b)); 
-        }
-
-        public static bool operator!= (Person a, Person b)
-        {
-            bool aIsNull = a is null;
-            bool bIsNull = b is null;
-            return (!aIsNull || !bIsNull) && (aIsNull || !a.Equals(b));
-        }
-
-        public static bool operator< (Person a, Person b)
-        {
-            bool aIsNull = a is null;
-            bool bIsNull = b is null;
-            return (aIsNull && !bIsNull) || (!aIsNull && a.CompareTo(b) < 0);
-        }
-
-        public static bool operator> (Person a, Person b)
-        {
-            bool aIsNull = a is null;
-            bool bIsNull = b is null;
-            return (!aIsNull && bIsNull) || (!aIsNull && a.CompareTo(b) > 0);
+            return value;
         }
     }
 }

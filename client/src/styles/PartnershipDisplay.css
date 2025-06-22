@@ -1,0 +1,8 @@
+.partnership {
+    border-color: black;
+    border-radius: 5px;
+    border-style: solid;
+    cursor: pointer;
+    font-size: 15px;
+    text-align: center;
+}

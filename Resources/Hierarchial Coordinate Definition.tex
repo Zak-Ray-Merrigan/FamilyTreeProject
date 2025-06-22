@@ -1,0 +1,77 @@
+\documentclass{article}
+\usepackage{amsmath, amssymb, amsthm}
+
+\begin{document}
+
+\section*{Hierarchical Coordinate of a Family Dynamic in a Family Tree by an Inherited Family Name}
+
+Let \( G = (V, E) \) be a directed graph representing a family tree, where each vertex \( v \in V \) corresponds to a \textbf{single-sided Family Dynamic} encoded as a JSON object with the following fixed schema:
+\begin{itemize}
+    \item \textbf{Id}: A unique identifier for the vertex (Family Dynamic node).
+    \item \textbf{Inherited Family Names} \( v_F \): A set of family names inherited by the member.
+    \item \textbf{MemberId}: A reference to the person collection in the DocumentDB.
+    \item \textbf{In-law Id} (optional): A reference to the in-law in the person collection.
+    \item \textbf{FamilyDynamicId} (optional): A reference to the family dynamic record in the DocumentDB.
+\end{itemize}
+
+Each directed edge \( (v, u) \in E \) represents a \textbf{parent-child} relationship, indicating that \( u \) is a child of \( v \).
+
+\subsection*{Subgraph Extraction by Family Name}
+
+Given a specific inherited family name \( f \), define a subgraph \( G' = (V', E') \) such that:
+\[
+V' = \{ v \in V \mid f \in v_F \}
+\]
+and \( E' \) retains all edges from \( E \) that connect nodes within \( V' \). To ensure a tree structure, we introduce a synthetic root vertex \( r \), connected to each vertex in \( V' \) that has no parent in \( V' \). This yields a rooted tree:
+\[
+T = (V' \cup \{r\}, E' \cup E_r)
+\]
+where \( E_r \) is the set of edges from \( r \) to root-level Family Dynamics in the subgraph.
+
+\subsection*{Hierarchical Coordinate Assignment}
+
+Let \( w \in T \) be a target Family Dynamic. To compute its \textbf{hierarchical coordinate}:
+
+\begin{enumerate}
+    \item Find the unique path \( P = (r, v_1, v_2, \dots, w) \) from the root \( r \) to \( w \) in the tree \( T \).
+    \item At each step along this path, enumerate the children of the current parent vertex \emph{from left to right}, assigning labels \( 1, 2, \dots \) in the order they appear among that parent's children.
+    \item For each vertex \( v_i \in P \), let \( L(v_i) \) denote its \textbf{position among its siblings} (children of its parent).
+    \item Collect the labels into an ordered list:
+    \[
+    \mathcal{H}(w) = [ L(v_1), L(v_2), \dots, L(w) ]
+    \]
+\end{enumerate}
+
+This list uniquely encodes the \textbf{hierarchical position of \( w \)} within the tree rooted at \( r \), as filtered by the inherited family name \( f \).
+
+\subsection*{Example}
+
+Consider the following tree structure:
+
+\[
+\begin{array}{c}
+(r) \\
+\downarrow \\
+(A) \\
+/ \quad \backslash \\
+(B) \quad (C) \\
+| \quad \quad \backslash \\
+(D) \quad \quad (E)
+\end{array}
+\]
+
+\begin{itemize}
+    \item \( A \) is the first child of \( r \): \( L(A) = 1 \)
+    \item \( B \), \( C \) are children of \( A \): \( L(B) = 1 \), \( L(C) = 2 \)
+    \item \( D \) is the first child of \( B \): \( L(D) = 1 \)
+    \item \( E \) is the first child of \( C \): \( L(E) = 1 \)
+\end{itemize}
+
+Now consider the path \( r \to A \to C \to E \). The hierarchical coordinate of \( E \) is:
+\[
+\mathcal{H}(E) = [1, 2, 1]
+\]
+
+Note that although \( D \) and \( E \) are at the same depth, their sibling groups differ due to different parent vertices, and each is the first among its siblings.
+
+\end{document}
