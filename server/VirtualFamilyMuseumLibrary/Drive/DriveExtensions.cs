@@ -81,6 +81,16 @@ namespace VirtualFamilyMuseumLibrary.Drive
             };
         }
 
+        public static string GetContainerName(this FamilyDriveContainers container)
+        {
+            return container switch
+            {
+                FamilyDriveContainers.Images => "images",
+                FamilyDriveContainers.Templates => "templates",
+                _ => throw new NotSupportedException($"{container} isn't part of the family drive.")
+            };
+        }
+
         public static string GetContentType(this FamilyContentTypes contentType)
         {
             return contentType.ToString().Replace('_', '/').ToLower();

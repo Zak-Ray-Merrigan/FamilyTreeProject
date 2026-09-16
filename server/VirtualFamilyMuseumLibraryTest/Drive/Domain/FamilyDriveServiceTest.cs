@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using SkiaSharp;
 using VirtualFamilyMuseumLibrary;
 using VirtualFamilyMuseumLibrary.Drive;
 using VirtualFamilyMuseumLibrary.Drive.Domain;
@@ -87,7 +88,7 @@ namespace VirtualFamilyMuseumLibraryTest.Drive.Domain
             string blobName = NewScratchImageBlobName();
             try
             {
-                using MemoryStream upload = new([0xFF, 0xD8, 0xFF, 0xE0]);
+                using MemoryStream upload = new(NewValidJpegBytes());
                 await drive.SaveAsync(blobName, upload, FamilyContentTypes.Image_JPEG);
 
                 FamilyDriveResult<FamilyBlobResource> result = await service.DownloadImageAsync(blobName);
@@ -107,7 +108,7 @@ namespace VirtualFamilyMuseumLibraryTest.Drive.Domain
             string blobName = NewScratchImageBlobName();
             try
             {
-                using MemoryStream upload = new([0xFF, 0xD8, 0xFF, 0xE0]);
+                using MemoryStream upload = new(NewValidJpegBytes());
                 await drive.SaveAsync(blobName, upload, FamilyContentTypes.Image_JPEG);
 
                 FamilyDriveResult<FamilyBlobResource> result = await service.DownloadImageAsync(blobName);
@@ -126,7 +127,7 @@ namespace VirtualFamilyMuseumLibraryTest.Drive.Domain
         public async Task DownloadImageAsyncShouldReturnPayloadWithContentMatchingUploadedBytes()
         {
             string blobName = NewScratchImageBlobName();
-            byte[] content = [0xFF, 0xD8, 0xFF, 0xE0, 0x01, 0x02, 0x03];
+            byte[] content = NewValidJpegBytes();
             try
             {
                 using (MemoryStream upload = new(content))
@@ -146,9 +147,177 @@ namespace VirtualFamilyMuseumLibraryTest.Drive.Domain
             }
         }
 
+        [Test]
+        public async Task DownloadImageAsyncShouldThrowInvalidOperationExceptionForCorruptedImageBlob()
+        {
+            // A stored blob with the right container/content-type header but bytes that aren't a
+            // real, decodable JPEG — DownloadImageAsync's ImageSharp-based structural check should
+            // reject this even though the shallow magic-byte check UploadImageAsync would have
+            // performed at write time (SOI marker only) is satisfied.
+            string blobName = NewScratchImageBlobName();
+            try
+            {
+                using MemoryStream upload = new([0xFF, 0xD8, 0xFF, 0xE0, 0x01, 0x02, 0x03]);
+                await drive.SaveAsync(blobName, upload, FamilyContentTypes.Image_JPEG);
+
+                Assert.ThrowsAsync<InvalidOperationException>(async () => await service.DownloadImageAsync(blobName));
+            }
+            finally
+            {
+                await drive.DeleteAsync(blobName);
+            }
+        }
+
+        // =====================================================================
+        // DownloadTemplateAsync — invalid blob name, fails before any repository/network call
+        // =====================================================================
+
+        [Test]
+        public void DownloadTemplateAsyncShouldThrowArgumentNullExceptionForNullBlobName()
+        {
+            Assert.ThrowsAsync<ArgumentNullException>(async () => await service.DownloadTemplateAsync(null!));
+        }
+
+        [Test]
+        public void DownloadTemplateAsyncShouldThrowInvalidOperationExceptionForUnrecognizedContainer()
+        {
+            Assert.ThrowsAsync<InvalidOperationException>(async () => await service.DownloadTemplateAsync("documents/file.txt"));
+        }
+
+        [Test]
+        public void DownloadTemplateAsyncShouldThrowInvalidOperationExceptionForImageBlobName()
+        {
+            Assert.ThrowsAsync<InvalidOperationException>(async () => await service.DownloadTemplateAsync($"images/{Guid.NewGuid()}.jpg"));
+        }
+
+        // =====================================================================
+        // DownloadTemplateAsync — not found
+        // =====================================================================
+
+        [Test]
+        public void DownloadTemplateAsyncShouldThrowFileNotFoundExceptionForNonExistentTemplateBlob()
+        {
+            Assert.ThrowsAsync<FileNotFoundException>(async () => await service.DownloadTemplateAsync(NewScratchTemplateBlobName()));
+        }
+
+        // =====================================================================
+        // DownloadTemplateAsync — success, round trip against a scratch template blob
+        // =====================================================================
+
+        [Test]
+        public async Task DownloadTemplateAsyncShouldReturnSuccessStatusAndDescriptiveMessageForExistingTemplateBlob()
+        {
+            string blobName = NewScratchTemplateBlobName();
+            try
+            {
+                using MemoryStream upload = new(NewValidPdfBytes());
+                await drive.SaveAsync(blobName, upload, FamilyContentTypes.Application_PDF);
+
+                FamilyDriveResult<FamilyBlobResource> result = await service.DownloadTemplateAsync(blobName);
+
+                Assert.That(result.Status, Is.EqualTo(FamilyDriveResultStatuses.Success));
+                Assert.That(result.Message, Is.EqualTo($"{blobName} (application/pdf) has been downloaded."));
+            }
+            finally
+            {
+                await drive.DeleteAsync(blobName);
+            }
+        }
+
+        [Test]
+        public async Task DownloadTemplateAsyncShouldReturnPayloadWithContentMatchingUploadedBytes()
+        {
+            string blobName = NewScratchTemplateBlobName();
+            byte[] content = NewValidPdfBytes();
+            try
+            {
+                using (MemoryStream upload = new(content))
+                {
+                    await drive.SaveAsync(blobName, upload, FamilyContentTypes.Application_PDF);
+                }
+
+                FamilyDriveResult<FamilyBlobResource> result = await service.DownloadTemplateAsync(blobName);
+
+                using MemoryStream downloaded = new();
+                await result.Payload!.Content.CopyToAsync(downloaded);
+                Assert.That(downloaded.ToArray(), Is.EqualTo(content));
+            }
+            finally
+            {
+                await drive.DeleteAsync(blobName);
+            }
+        }
+
+        // =====================================================================
+        // DownloadTemplateAsync — corrupted content, two distinct shapes of malformed PDF
+        // =====================================================================
+
+        [Test]
+        public async Task DownloadTemplateAsyncShouldThrowInvalidOperationExceptionForHeaderOnlyGarbageBlob()
+        {
+            // Real "%PDF-1.7" header, garbage after it — exercises the PdfException catch.
+            string blobName = NewScratchTemplateBlobName();
+            try
+            {
+                byte[] content = System.Text.Encoding.ASCII.GetBytes("%PDF-1.7\ngarbagegarbagegarbagegarbage");
+                using MemoryStream upload = new(content);
+                await drive.SaveAsync(blobName, upload, FamilyContentTypes.Application_PDF);
+
+                Assert.ThrowsAsync<InvalidOperationException>(async () => await service.DownloadTemplateAsync(blobName));
+            }
+            finally
+            {
+                await drive.DeleteAsync(blobName);
+            }
+        }
+
+        [Test]
+        public async Task DownloadTemplateAsyncShouldThrowInvalidOperationExceptionForNoPdfHeaderBlob()
+        {
+            // No "%PDF" signature at all — exercises the separate iText.IO.Exceptions.IOException
+            // catch ("PDF header not found"), which PdfException alone does not cover.
+            string blobName = NewScratchTemplateBlobName();
+            try
+            {
+                using MemoryStream upload = new([0x00, 0x01, 0x02, 0x03, 0x04, 0x05]);
+                await drive.SaveAsync(blobName, upload, FamilyContentTypes.Application_PDF);
+
+                Assert.ThrowsAsync<InvalidOperationException>(async () => await service.DownloadTemplateAsync(blobName));
+            }
+            finally
+            {
+                await drive.DeleteAsync(blobName);
+            }
+        }
+
         private static string NewScratchImageBlobName()
         {
             return $"images/integration-test-{Guid.NewGuid()}.jpg";
+        }
+
+        private static byte[] NewValidJpegBytes()
+        {
+            using SKBitmap bitmap = new(1, 1);
+            using SKImage image = SKImage.FromBitmap(bitmap);
+            using SKData encoded = image.Encode(SKEncodedImageFormat.Jpeg, 100);
+            return encoded.ToArray();
+        }
+
+        private static string NewScratchTemplateBlobName()
+        {
+            return $"templates/integration-test-{Guid.NewGuid()}.pdf";
+        }
+
+        private static byte[] NewValidPdfBytes()
+        {
+            using MemoryStream buffer = new();
+            using (iText.Kernel.Pdf.PdfWriter writer = new(buffer))
+            {
+                writer.SetCloseStream(false);
+                using iText.Kernel.Pdf.PdfDocument document = new(writer);
+                document.AddNewPage();
+            }
+            return buffer.ToArray();
         }
     }
 }
