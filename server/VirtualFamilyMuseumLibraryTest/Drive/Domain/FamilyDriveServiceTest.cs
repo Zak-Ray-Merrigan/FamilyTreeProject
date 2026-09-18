@@ -53,19 +53,33 @@ namespace VirtualFamilyMuseumLibraryTest.Drive.Domain
         }
 
         [Test]
-        public void DownloadImageAsyncShouldThrowInvalidOperationExceptionForUnrecognizedContainer()
+        public void DownloadImageAsyncShouldThrowNotSupportedExceptionForUnrecognizedContainer()
         {
-            // Exercises the caught-NotSupportedException path: GetContainer itself doesn't
-            // recognize "documents" as a container at all.
-            Assert.ThrowsAsync<InvalidOperationException>(async () => await service.DownloadImageAsync("documents/file.txt"));
+            // No domain-level container check anymore: this propagates unwrapped straight from
+            // repository.GetAsync -> FamilyDrive.GetBlobClient -> DriveExtensions.GetContainer,
+            // which doesn't recognize "documents" as a container at all.
+            Assert.ThrowsAsync<NotSupportedException>(async () => await service.DownloadImageAsync("documents/file.txt"));
         }
 
         [Test]
-        public void DownloadImageAsyncShouldThrowInvalidOperationExceptionForTemplateBlobName()
+        public async Task DownloadImageAsyncShouldThrowInvalidOperationExceptionForTemplateBlobName()
         {
-            // Exercises the other branch: GetContainer recognizes "templates" just fine, it's
-            // simply the wrong container for an image download.
-            Assert.ThrowsAsync<InvalidOperationException>(async () => await service.DownloadImageAsync("templates/2026/Aug/14/SomeFamily.pdf"));
+            // GetContainer recognizes "templates" just fine, so this actually fetches the blob
+            // (must exist for the content-type check further down to be what rejects it, rather
+            // than the not-found check firing first) and gets ContentType == Application_PDF back
+            // — a mismatch against the Image_JPEG DownloadImageAsync expects.
+            string blobName = NewScratchTemplateBlobName();
+            try
+            {
+                using MemoryStream upload = new(NewValidPdfBytes());
+                await drive.SaveAsync(blobName, upload, FamilyContentTypes.Application_PDF);
+
+                Assert.ThrowsAsync<InvalidOperationException>(async () => await service.DownloadImageAsync(blobName));
+            }
+            finally
+            {
+                await drive.DeleteAsync(blobName);
+            }
         }
 
         // =====================================================================
@@ -179,15 +193,28 @@ namespace VirtualFamilyMuseumLibraryTest.Drive.Domain
         }
 
         [Test]
-        public void DownloadTemplateAsyncShouldThrowInvalidOperationExceptionForUnrecognizedContainer()
+        public void DownloadTemplateAsyncShouldThrowNotSupportedExceptionForUnrecognizedContainer()
         {
-            Assert.ThrowsAsync<InvalidOperationException>(async () => await service.DownloadTemplateAsync("documents/file.txt"));
+            Assert.ThrowsAsync<NotSupportedException>(async () => await service.DownloadTemplateAsync("documents/file.txt"));
         }
 
         [Test]
-        public void DownloadTemplateAsyncShouldThrowInvalidOperationExceptionForImageBlobName()
+        public async Task DownloadTemplateAsyncShouldThrowInvalidOperationExceptionForImageBlobName()
         {
-            Assert.ThrowsAsync<InvalidOperationException>(async () => await service.DownloadTemplateAsync($"images/{Guid.NewGuid()}.jpg"));
+            // Must exist for the content-type mismatch (Image_JPEG vs. the Application_PDF
+            // DownloadTemplateAsync expects) to be what rejects it, rather than not-found firing first.
+            string blobName = NewScratchImageBlobName();
+            try
+            {
+                using MemoryStream upload = new(NewValidJpegBytes());
+                await drive.SaveAsync(blobName, upload, FamilyContentTypes.Image_JPEG);
+
+                Assert.ThrowsAsync<InvalidOperationException>(async () => await service.DownloadTemplateAsync(blobName));
+            }
+            finally
+            {
+                await drive.DeleteAsync(blobName);
+            }
         }
 
         // =====================================================================

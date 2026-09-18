@@ -13,82 +13,49 @@ namespace VirtualFamilyMuseumLibrary.Drive.Domain
 
         public Task<FamilyDriveResult<FamilyBlobResource>> DownloadImageAsync(string blobName)
         {
-            return DownloadAsync(blobName, FamilyDriveContainers.Images, FamilyContentTypes.Image_JPEG, IsLegitimateJpeg, "a legitimate JPEG image");
-        }
-
-        // Structural validation, not a full pixel decode: confirms the buffered content parses as
-        // a real JPEG (catching corruption/format-spoofing beyond the magic-byte check
-        // UploadImageAsync does at write time), without paying for a full decode on every download.
-        // SKCodec.Create reports failure via the out result code rather than throwing, so this
-        // doesn't need exception handling the way the iText-based IsLegitimatePdf below does.
-        // SKCodec.Create(Stream, ...) takes ownership of and disposes whatever stream it's given
-        // once the codec is disposed — confirmed by testing, not documentation — which would close
-        // `content` out from under the caller (still needed afterward as Payload.Content on
-        // success). Wrapping it in an SKManagedStream with disposeManagedStream: false keeps
-        // ownership with the caller.
-        private static bool IsLegitimateJpeg(Stream content)
-        {
-            content.Position = 0;
-            using SKManagedStream skStream = new(content, false);
-            using SKCodec? codec = SKCodec.Create(skStream, out SKCodecResult result);
-            content.Position = 0;
-            return result == SKCodecResult.Success && codec is not null && codec.EncodedFormat == SKEncodedImageFormat.Jpeg;
+            return DownloadAsync(blobName, FamilyContentTypes.Image_JPEG, IsLegitimateJpeg, "a legitimate JPEG image");
         }
 
         public Task<FamilyDriveResult<FamilyBlobResource>> DownloadTemplateAsync(string blobName)
         {
-            return DownloadAsync(blobName, FamilyDriveContainers.Templates, FamilyContentTypes.Application_PDF, IsLegitimatePdf, "a legitimate PDF");
+            return DownloadAsync(blobName, FamilyContentTypes.Application_PDF, IsLegitimatePdf, "a legitimate PDF");
         }
 
-        // Shared skeleton behind both public Download*Async methods: validate the blob name
-        // belongs to the expected container, fetch it, validate its stored content-type, then
-        // buffer and structurally validate the actual bytes before handing back a Success result.
-        // Parameterized rather than duplicated per entity type, since the two callers previously
-        // diverged only in which container/content-type/legitimacy-check applied — and a bug fixed
-        // in one copy had no guarantee of being caught in the other.
-        private async Task<FamilyDriveResult<FamilyBlobResource>> DownloadAsync(string blobName, FamilyDriveContainers expectedContainer,
-            FamilyContentTypes expectedContentType, Func<Stream, bool> isLegitimate, string legitimacyDescription)
+        // Shared skeleton behind both public Download*Async methods: fetch the blob, validate its
+        // stored content-type, then buffer and structurally validate the actual bytes before
+        // handing back a Success result. Parameterized rather than duplicated per entity type,
+        // since the two callers previously diverged only in which content-type/legitimacy-check
+        // applied — and a bug fixed in one copy had no guarantee of being caught in the other.
+        //
+        // No separate container check: repository.GetAsync eventually calls
+        // DriveExtensions.GetContainer, which already throws NotSupportedException on its own for
+        // a name that isn't images/templates prefixed at all — that propagates unwrapped as the
+        // unexpected failure it is. A recognized-but-wrong container (e.g. a templates blobName
+        // passed to DownloadImageAsync) doesn't need a separate check either: container and
+        // content-type are 1:1 by construction in this system (TemplateWriter always saves
+        // Application_PDF, UploadImageAsync always saves Image_JPEG), so fetching from the wrong
+        // container always produces a content-type mismatch, which the check below already covers.
+        private async Task<FamilyDriveResult<FamilyBlobResource>> DownloadAsync(string blobName, FamilyContentTypes expectedContentType,
+            Func<Stream, bool> isLegitimate, string legitimacyDescription)
         {
             logger.LogInformation("Downloading {BlobName} from the family drive.", blobName);
 
             if (blobName is null)
             {
-                // GetContainer below assumes a non-null string (it calls blobName.Split('/')
-                // directly), so a null here would otherwise surface as a raw NullReferenceException
-                // instead of an intentional, well-described exception.
+                // repository.GetAsync below eventually calls DriveExtensions.GetContainer, which
+                // assumes a non-null string (it calls blobName.Split('/') directly), so a null here
+                // would otherwise surface as a raw NullReferenceException instead of an intentional,
+                // well-described exception.
                 ArgumentNullException ex = new(nameof(blobName));
                 logger.LogError(ex, "Blob name can't be null.");
-                throw ex;
-            }
-
-            string containerName = expectedContainer.GetContainerName();
-
-            // GetContainer throws NotSupportedException for any name that isn't images/templates
-            // prefixed (including "" — see DriveExtensionsTest). Folded into the same
-            // InvalidOperationException below so callers see one exception type — and one
-            // description — for "this isn't a valid blob name for this container," regardless of
-            // whether the name was recognized-but-wrong-container or unrecognized outright.
-            bool isExpectedContainer;
-            try
-            {
-                isExpectedContainer = DriveExtensions.GetContainer(blobName) == expectedContainer;
-            }
-            catch (NotSupportedException)
-            {
-                isExpectedContainer = false;
-            }
-            if (!isExpectedContainer)
-            {
-                InvalidOperationException ex = new($"{blobName} doesn't belong to the {containerName} container.");
-                logger.LogError(ex, "{BlobName} doesn't belong to the {ContainerName} container.", blobName, containerName);
                 throw ex;
             }
 
             FamilyBlobResource? resource = await repository.GetAsync(blobName);
             if (resource is null)
             {
-                FileNotFoundException ex = new($"{blobName} isn't found in the {containerName} container.", blobName);
-                logger.LogError(ex, "{BlobName} isn't found in the {ContainerName} container.", blobName, containerName);
+                FileNotFoundException ex = new($"{blobName} isn't found.", blobName);
+                logger.LogError(ex, "{BlobName} isn't found.", blobName);
                 throw ex;
             }
             if (resource.ContentType != expectedContentType)
@@ -133,6 +100,25 @@ namespace VirtualFamilyMuseumLibrary.Drive.Domain
                 Message = $"{blobName} ({resource.ContentType.GetContentType()}) has been downloaded.",
                 Payload = verifiedResource
             };
+        }
+
+        // Structural validation, not a full pixel decode: confirms the buffered content parses as
+        // a real JPEG (catching corruption/format-spoofing beyond the magic-byte check
+        // UploadImageAsync does at write time), without paying for a full decode on every download.
+        // SKCodec.Create reports failure via the out result code rather than throwing, so this
+        // doesn't need exception handling the way the iText-based IsLegitimatePdf below does.
+        // SKCodec.Create(Stream, ...) takes ownership of and disposes whatever stream it's given
+        // once the codec is disposed — confirmed by testing, not documentation — which would close
+        // `content` out from under the caller (still needed afterward as Payload.Content on
+        // success). Wrapping it in an SKManagedStream with disposeManagedStream: false keeps
+        // ownership with the caller.
+        private static bool IsLegitimateJpeg(Stream content)
+        {
+            content.Position = 0;
+            using SKManagedStream skStream = new(content, false);
+            using SKCodec? codec = SKCodec.Create(skStream, out SKCodecResult result);
+            content.Position = 0;
+            return result == SKCodecResult.Success && codec is not null && codec.EncodedFormat == SKEncodedImageFormat.Jpeg;
         }
 
         private static bool IsLegitimatePdf(Stream content)
