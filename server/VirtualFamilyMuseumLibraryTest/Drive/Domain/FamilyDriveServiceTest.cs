@@ -317,6 +317,147 @@ namespace VirtualFamilyMuseumLibraryTest.Drive.Domain
             }
         }
 
+        // =====================================================================
+        // RemoveImageAsync — invalid blob name, fails before any repository/network call
+        // =====================================================================
+
+        [Test]
+        public void RemoveImageAsyncShouldThrowArgumentNullExceptionForNullBlobName()
+        {
+            Assert.ThrowsAsync<ArgumentNullException>(async () => await service.RemoveImageAsync(null!));
+        }
+
+        [Test]
+        public void RemoveImageAsyncShouldThrowNotSupportedExceptionForUnrecognizedContainer()
+        {
+            Assert.ThrowsAsync<NotSupportedException>(async () => await service.RemoveImageAsync("documents/file.txt"));
+        }
+
+        [Test]
+        public async Task RemoveImageAsyncShouldThrowInvalidOperationExceptionForTemplateBlobNameAndLeaveItInPlace()
+        {
+            string blobName = NewScratchTemplateBlobName();
+            try
+            {
+                using MemoryStream upload = new(NewValidPdfBytes());
+                await drive.SaveAsync(blobName, upload, FamilyContentTypes.Application_PDF);
+
+                Assert.ThrowsAsync<InvalidOperationException>(async () => await service.RemoveImageAsync(blobName));
+
+                // The content-type mismatch must be caught before deletion happens, not after.
+                Assert.That(await drive.GetAsync(blobName), Is.Not.Null);
+            }
+            finally
+            {
+                await drive.DeleteAsync(blobName);
+            }
+        }
+
+        // =====================================================================
+        // RemoveImageAsync — not found is a normal outcome, not an exception
+        // =====================================================================
+
+        [Test]
+        public async Task RemoveImageAsyncShouldReturnFalseForNonExistentImageBlob()
+        {
+            bool result = await service.RemoveImageAsync(NewScratchImageBlobName());
+            Assert.That(result, Is.False);
+        }
+
+        // =====================================================================
+        // RemoveImageAsync — success, actually removes the blob
+        // =====================================================================
+
+        [Test]
+        public async Task RemoveImageAsyncShouldReturnTrueAndDeleteExistingImageBlob()
+        {
+            string blobName = NewScratchImageBlobName();
+            try
+            {
+                using MemoryStream upload = new(NewValidJpegBytes());
+                await drive.SaveAsync(blobName, upload, FamilyContentTypes.Image_JPEG);
+
+                bool result = await service.RemoveImageAsync(blobName);
+
+                Assert.That(result, Is.True);
+                Assert.That(await drive.GetAsync(blobName), Is.Null);
+            }
+            finally
+            {
+                await drive.DeleteAsync(blobName);
+            }
+        }
+
+        // =====================================================================
+        // RemoveTemplateAsync — invalid blob name, fails before any repository/network call
+        // =====================================================================
+
+        [Test]
+        public void RemoveTemplateAsyncShouldThrowArgumentNullExceptionForNullBlobName()
+        {
+            Assert.ThrowsAsync<ArgumentNullException>(async () => await service.RemoveTemplateAsync(null!));
+        }
+
+        [Test]
+        public void RemoveTemplateAsyncShouldThrowNotSupportedExceptionForUnrecognizedContainer()
+        {
+            Assert.ThrowsAsync<NotSupportedException>(async () => await service.RemoveTemplateAsync("documents/file.txt"));
+        }
+
+        [Test]
+        public async Task RemoveTemplateAsyncShouldThrowInvalidOperationExceptionForImageBlobNameAndLeaveItInPlace()
+        {
+            string blobName = NewScratchImageBlobName();
+            try
+            {
+                using MemoryStream upload = new(NewValidJpegBytes());
+                await drive.SaveAsync(blobName, upload, FamilyContentTypes.Image_JPEG);
+
+                Assert.ThrowsAsync<InvalidOperationException>(async () => await service.RemoveTemplateAsync(blobName));
+
+                Assert.That(await drive.GetAsync(blobName), Is.Not.Null);
+            }
+            finally
+            {
+                await drive.DeleteAsync(blobName);
+            }
+        }
+
+        // =====================================================================
+        // RemoveTemplateAsync — not found is a normal outcome, not an exception
+        // =====================================================================
+
+        [Test]
+        public async Task RemoveTemplateAsyncShouldReturnFalseForNonExistentTemplateBlob()
+        {
+            bool result = await service.RemoveTemplateAsync(NewScratchTemplateBlobName());
+            Assert.That(result, Is.False);
+        }
+
+        // =====================================================================
+        // RemoveTemplateAsync — success, actually removes the blob
+        // =====================================================================
+
+        [Test]
+        public async Task RemoveTemplateAsyncShouldReturnTrueAndDeleteExistingTemplateBlob()
+        {
+            string blobName = NewScratchTemplateBlobName();
+            try
+            {
+                using MemoryStream upload = new(NewValidPdfBytes());
+                await drive.SaveAsync(blobName, upload, FamilyContentTypes.Application_PDF);
+
+                bool result = await service.RemoveTemplateAsync(blobName);
+
+                Assert.That(result, Is.True);
+                Assert.That(await drive.GetAsync(blobName), Is.Null);
+            }
+            finally
+            {
+                await drive.DeleteAsync(blobName);
+            }
+        }
+
         private static string NewScratchImageBlobName()
         {
             return $"images/integration-test-{Guid.NewGuid()}.jpg";
