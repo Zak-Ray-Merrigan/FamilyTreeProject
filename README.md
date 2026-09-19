@@ -8,25 +8,36 @@ Initially, the family reunion committee is implementing a family tree in a word 
 "appsettings.json": this is main settings of the project.
 "firstEntrySample.json": shows a sample MongoDB Collection record
 
-# FamilyTreeLibrary
-This directory shows the server-side implementation of the project consisting the DAO and Service stages.
-# FamilyTreeLibrary/Data
-Represents the DAO Layer
+# Execution Types
+The backend (`server/`) can run in four contexts, represented by the `ExecutionTypes` enum (`VirtualFamilyMuseumLibrary`) that every shared bootstrap method (see Extensions.cs below) is parameterized on:
+- `API`: the ASP.NET Core Web API that will eventually host the Controller layer for this project. Not yet built.
+- `Console`: a standalone console entry point. `VirtualFamilyMuseumScratch` currently plays this role informally — scratch code for trying things out and seeing output on the console — rather than a project formally wired up through `ExecutionTypes.Console`.
+- `Functions`: an Azure Functions isolated-worker host. Not yet built.
+- `Test`: `VirtualFamilyMuseumLibraryTest`, the NUnit test project — the one execution type with a fully working project today, bootstrapping its own `Host.CreateApplicationBuilder()` per test fixture.
 
-# FamilyTreeLibrary/Models
-Stores the logical/physical objects as model classes.
+Each execution type reads its Azure App Configuration/Key Vault endpoints from its own pair of environment variables — `FamilyConfiguration__Endpoint`/`FamilyVault__Endpoint` for API/Console/Functions, `FamilyConfigurationTest__Endpoint`/`FamilyVaultTest__Endpoint` for Test — so a local test run never points at the same configuration store as a real deployment.
 
-# FamilyTreeLibrary/Service
-Represents the Service Layer
+# Extensions.cs
+`VirtualFamilyMuseumLibrary/Extensions.cs` (top-level namespace — not to be confused with an aspect's own extensions class, e.g. `Drive/DriveExtensions.cs`, see Aspects below) holds the small set of static utility surface every aspect can use, regardless of which one it belongs to:
+- `EN_DASH`: the single Unicode en-dash constant (`–`) used anywhere a date range needs rendering/parsing consistently (e.g. `FamilyDate`, or `TemplateLine.ToString()` in the Drive aspect) rather than each call site hardcoding its own dash character.
+- `AddConstantStorePipeline(this IConfigurationBuilder, ExecutionTypes)`: wires Azure App Configuration and Key Vault into the configuration pipeline, picking which pair of endpoint environment variables to read based on the execution type (see Execution Types above). A no-op for whichever store's endpoint variable isn't set, so a context that doesn't need one doesn't fail startup over it.
+- `AddFamilyInsights(this IHostApplicationBuilder, ExecutionTypes)`: wires Application Insights telemetry and logging, tagging every emitted telemetry item with a cloud role name equal to the execution type's own name (`API`, `Console`, `Functions`, `Test`) so multiple execution types reporting to the same Application Insights resource can be told apart. Also a no-op if `FamilyInsights:ConnectionString` isn't configured.
 
-# FamilyTreeLibraryTest
-This is a test project for the DAO and Service Layer of the server-side
+Both extension methods are aspect-agnostic — they don't know or care whether the caller is about to touch Drive, Serialization, or anything else; they only ever configure the host itself.
 
-# FamilyTreeSratch
-This serves as scratch paper to be able to see stuff show up on the console.
+# Shared Models
+`VirtualFamilyMuseumLibrary/Models` holds model types shared across more than one aspect of this project — as distinct from an aspect's own `Models` folder (e.g. `Drive/Models`, documented in that aspect's own child document; see Aspects below), which only that one aspect depends on.
 
-# FamilyTreeAPI
-Represent the Controller layer that can be tested using software such as postman.
+- `DomainResult<T>`: the universal shape any domain-layer class in this project can hand back to its caller (a Controller, most often) to communicate an outcome without necessarily requiring a try/catch for every one. Carries a required `Message` (what happened, in caller-facing language) and an optional `Payload` (`T?` — whatever the operation actually produced, if anything). It's deliberately minimal and has no notion of success/failure built in on its own: an aspect that needs to distinguish more than one kind of outcome extends it rather than `DomainResult<T>` growing a status concept that would only make sense for some aspects and not others. The Drive aspect's `FamilyDriveResult<T>` (see Aspects) is the first such extension, adding its own `Status` of type `FamilyDriveResultStatuses`.
+- `FamilyDate`: an immutable year (required) plus optional month and day — deliberately looser than `DateOnly`, since genealogical records routinely have partial dates (a year alone, or a year and month with no day) or even an uncertain year *range* (e.g. `"1940-1943"`). Implements `IBridge` (see the Serialization aspect below) so it has a uniform serializable representation without needing its own bespoke persistence logic. Its comparisons (`IComparable`, the relational operators) treat a missing month/day as sorting before a present one, and a year range as spanning between its own min and max when compared against a specific year.
+- `Month`: a plain `Jan`-`Dec` enum — `FamilyDate`'s month component, and the same type the Drive aspect's template PDF format renders a date's month as (see drive.md's Template Processing section).
+
+# Aspects
+This project's backend is organized into distinct **aspects** — self-contained areas of functionality, each with its own models, utilities, and (where relevant) repository/domain layers. An aspect substantial enough to need its own deep-dive gets a child document living alongside its own code rather than growing inside this README, so it stays next to what it describes and can be updated independently of everything else. Everything above this section — `DomainResult<T>`/`FamilyDate`/`Month`, `Extensions.cs`, `ExecutionTypes` — is shared *across* aspects rather than belonging to any single one.
+
+- **Drive Aspect** — Azure Blob Storage: templates and images, their models, utilities, repository, and domain logic (`TemplateReader`, `TemplateWriter`, `FamilyDriveService`). Documented in full in [`server/VirtualFamilyMuseumLibrary/Drive/drive.md`](server/VirtualFamilyMuseumLibrary/Drive/drive.md).
+- **Serialization Aspect** — a small `IBridge`/`Bridge`/`BridgeValue` layer (`Serialization/`) giving domain types like `FamilyDate` a uniform serializable value representation, independent of whichever polyglot store (Neo4j, Cosmos DB) actually persists them. Its own child document, `serialization.md`, hasn't been written yet — this paragraph is as deep as the coverage goes for now.
+- More aspects will be documented here, each with their own child document, as they're built.
 
 # Getting Started with Create React App
 
