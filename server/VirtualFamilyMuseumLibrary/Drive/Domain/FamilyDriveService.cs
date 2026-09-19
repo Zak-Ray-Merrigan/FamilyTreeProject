@@ -31,6 +31,74 @@ namespace VirtualFamilyMuseumLibrary.Drive.Domain
             return RemoveAsync(blobName, FamilyContentTypes.Application_PDF);
         }
 
+        // Templates are only ever written by TemplateWriter (never uploaded by React), so there's
+        // no UploadTemplateAsync — this is the only Upload* method. Unlike Download/Remove, whose
+        // failures are the domain's own guarantees being violated (unexpected), a bad upload here
+        // is the client's fault (predictable) — so those two cases return a non-Success
+        // FamilyDriveResult instead of throwing; only a genuine infrastructure failure (the
+        // repository unable to save) still throws.
+        public async Task<FamilyDriveResult<FamilyBlobResource>> UploadImageAsync(Stream content, FamilyContentTypes contentType)
+        {
+            logger.LogInformation("Uploading an image to the family drive.");
+
+            if (content is null)
+            {
+                ArgumentNullException ex = new(nameof(content));
+                logger.LogError(ex, "Content can't be null.");
+                throw ex;
+            }
+
+            if (contentType != FamilyContentTypes.Image_JPEG)
+            {
+                string expectedContentTypeText = FamilyContentTypes.Image_JPEG.GetContentType();
+                logger.LogInformation("Rejected an image upload because its content-type wasn't \"{ContentTypeText}\".", expectedContentTypeText);
+                return new FamilyDriveResult<FamilyBlobResource>
+                {
+                    Status = FamilyDriveResultStatuses.UnsupportedContentType,
+                    Message = $"Content-type must be \"{expectedContentTypeText}\".",
+                    Payload = null
+                };
+            }
+
+            // Buffered for the same reason DownloadAsync buffers: the caller's stream (e.g. an
+            // ASP.NET Core request body) isn't guaranteed to be seekable, and IsLegitimateJpeg
+            // consumes whatever it reads. The domain doesn't own `content` (the caller supplied
+            // it), so unlike DownloadAsync's handling of a repository-owned stream, it's never
+            // disposed here.
+            Stream buffered = new MemoryStream();
+            await content.CopyToAsync(buffered);
+            buffered.Position = 0;
+            if (!IsLegitimateJpeg(buffered))
+            {
+                await buffered.DisposeAsync();
+                logger.LogInformation("Rejected an image upload because its content isn't a legitimate JPEG image.");
+                return new FamilyDriveResult<FamilyBlobResource>
+                {
+                    Status = FamilyDriveResultStatuses.IllegitimateContent,
+                    Message = "Content isn't a legitimate JPEG image.",
+                    Payload = null
+                };
+            }
+            buffered.Position = 0;
+
+            string blobName = $"images/{Guid.CreateVersion7()}.jpg";
+            FamilyBlobResource? resource = await repository.SaveAsync(blobName, buffered, FamilyContentTypes.Image_JPEG);
+            if (resource is null)
+            {
+                IOException ex = new($"Unable to upload {blobName} to the images container.");
+                logger.LogError(ex, "Unable to upload {BlobName} to the images container.", blobName);
+                throw ex;
+            }
+
+            logger.LogInformation("{BlobName} has been uploaded.", blobName);
+            return new FamilyDriveResult<FamilyBlobResource>
+            {
+                Status = FamilyDriveResultStatuses.Success,
+                Message = $"{blobName} ({resource.ContentType.GetContentType()}) has been uploaded.",
+                Payload = resource
+            };
+        }
+
         // Shared skeleton behind both public Download*Async methods: fetch the blob, validate its
         // stored content-type, then buffer and structurally validate the actual bytes before
         // handing back a Success result. Parameterized rather than duplicated per entity type,

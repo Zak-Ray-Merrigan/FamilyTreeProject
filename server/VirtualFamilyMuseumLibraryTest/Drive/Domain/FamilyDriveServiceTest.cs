@@ -458,6 +458,81 @@ namespace VirtualFamilyMuseumLibraryTest.Drive.Domain
             }
         }
 
+        // =====================================================================
+        // UploadImageAsync — invalid content, fails before any repository/network call
+        // =====================================================================
+
+        [Test]
+        public void UploadImageAsyncShouldThrowArgumentNullExceptionForNullContent()
+        {
+            Assert.ThrowsAsync<ArgumentNullException>(async () => await service.UploadImageAsync(null!, FamilyContentTypes.Image_JPEG));
+        }
+
+        // =====================================================================
+        // UploadImageAsync — predictable failures, no exception, no upload attempted
+        // =====================================================================
+
+        [Test]
+        public async Task UploadImageAsyncShouldReturnUnsupportedContentTypeStatusForNonJpegContentType()
+        {
+            using MemoryStream upload = new(NewValidPdfBytes());
+
+            FamilyDriveResult<FamilyBlobResource> result = await service.UploadImageAsync(upload, FamilyContentTypes.Application_PDF);
+
+            Assert.That(result.Status, Is.EqualTo(FamilyDriveResultStatuses.UnsupportedContentType));
+            Assert.That(result.Message, Is.EqualTo("Content-type must be \"image/jpeg\"."));
+            Assert.That(result.Payload, Is.Null);
+        }
+
+        [Test]
+        public async Task UploadImageAsyncShouldReturnIllegitimateContentStatusForCorruptedJpegBytes()
+        {
+            using MemoryStream upload = new([0xFF, 0xD8, 0xFF, 0xE0, 0x01, 0x02, 0x03]);
+
+            FamilyDriveResult<FamilyBlobResource> result = await service.UploadImageAsync(upload, FamilyContentTypes.Image_JPEG);
+
+            Assert.That(result.Status, Is.EqualTo(FamilyDriveResultStatuses.IllegitimateContent));
+            Assert.That(result.Message, Is.EqualTo("Content isn't a legitimate JPEG image."));
+            Assert.That(result.Payload, Is.Null);
+        }
+
+        // =====================================================================
+        // UploadImageAsync — success, round trip against a real upload
+        // =====================================================================
+
+        [Test]
+        public async Task UploadImageAsyncShouldReturnSuccessStatusAndUploadedBlobForLegitimateJpeg()
+        {
+            byte[] content = NewValidJpegBytes();
+            using MemoryStream upload = new(content);
+            string? blobName = null;
+            try
+            {
+                FamilyDriveResult<FamilyBlobResource> result = await service.UploadImageAsync(upload, FamilyContentTypes.Image_JPEG);
+                blobName = result.Payload?.BlobName;
+
+                Assert.That(result.Status, Is.EqualTo(FamilyDriveResultStatuses.Success));
+                Assert.That(result.Payload, Is.Not.Null);
+                Assert.That(result.Payload!.BlobName, Does.StartWith("images/"));
+                Assert.That(result.Payload.BlobName, Does.EndWith(".jpg"));
+                Assert.That(result.Payload.ContentType, Is.EqualTo(FamilyContentTypes.Image_JPEG));
+                Assert.That(result.Message, Is.EqualTo($"{result.Payload.BlobName} (image/jpeg) has been uploaded."));
+
+                FamilyBlobResource? uploaded = await drive.GetAsync(result.Payload.BlobName);
+                Assert.That(uploaded, Is.Not.Null);
+                using MemoryStream downloaded = new();
+                await uploaded!.Content.CopyToAsync(downloaded);
+                Assert.That(downloaded.ToArray(), Is.EqualTo(content));
+            }
+            finally
+            {
+                if (blobName is not null)
+                {
+                    await drive.DeleteAsync(blobName);
+                }
+            }
+        }
+
         private static string NewScratchImageBlobName()
         {
             return $"images/integration-test-{Guid.NewGuid()}.jpg";
