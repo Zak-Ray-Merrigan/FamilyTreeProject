@@ -36,7 +36,14 @@ Both extension methods are aspect-agnostic — they don't know or care whether t
 This project's backend is organized into distinct **aspects** — self-contained areas of functionality, each with its own models, utilities, and (where relevant) repository/domain layers. An aspect substantial enough to need its own deep-dive gets a child document living alongside its own code rather than growing inside this README, so it stays next to what it describes and can be updated independently of everything else. Everything above this section — `DomainResult<T>`/`FamilyDate`/`Month`, `Extensions.cs`, `ExecutionTypes` — is shared *across* aspects rather than belonging to any single one.
 
 - **Drive Aspect** — Azure Blob Storage: templates and images, their models, utilities, repository, and domain logic (`TemplateReader`, `TemplateWriter`, `FamilyDriveService`). Documented in full in [`server/VirtualFamilyMuseumLibrary/Drive/drive.md`](server/VirtualFamilyMuseumLibrary/Drive/drive.md).
-- **Serialization Aspect** — a small `IBridge`/`Bridge`/`BridgeValue` layer (`Serialization/`) giving domain types like `FamilyDate` a uniform serializable value representation, independent of whichever polyglot store (Neo4j, Cosmos DB) actually persists them. Its own child document, `serialization.md`, hasn't been written yet — this paragraph is as deep as the coverage goes for now.
+- **Serialization Aspect**: `VirtualFamilyMuseumLibrary/Serialization` is the **single source of truth for JSON communication** across the whole stack: Cosmos DB, Neo4j, C# .NET 9, and React. **C# .NET 9 is the central hub.** Every value passes through the library on its way anywhere else, and the three edges never talk to each other directly:
+  - **Cosmos DB ⇄ C# .NET 9:** documents are stored as JSON, so this edge is a direct mapping.
+  - **Neo4j ⇄ C# .NET 9:** vertices only hold flat primitive properties, so this edge flattens nested values and drops nulls.
+  - **React ⇄ C# .NET 9:** the Web API sends and receives camelCase JSON using the same serializer settings the stores use.
+
+  Each domain type (e.g. `FamilyDate`) describes itself once as a JSON value through the `IBridge`/`Bridge`/`BridgeValue` layer. Every edge translates from that one value, rather than each type having its own mapping for each destination. `BridgeSerializer` is the only code that reads or writes JSON text, and `SerializationExtensions.GetOptions` is the one set of serializer options everything shares. So far only the hub side is built. The Cosmos DB and Neo4j adapters, the Web API, and the React source are not, and `serialization.md` records the rules they must follow.
+
+  This is only an overview. The details are in [`server/VirtualFamilyMuseumLibrary/Serialization/serialization.md`](server/VirtualFamilyMuseumLibrary/Serialization/serialization.md): the models, the converter, the full type-mapping table for all four destinations, the rules for the React client, and the currently known limitations.
 - More aspects will be documented here, each with their own child document, as they're built.
 
 # Getting Started with Create React App
