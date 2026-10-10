@@ -58,6 +58,16 @@ resource familyCosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2026-03-15' 
   }
 }
 
+resource familyCosmosAccountRoleAssignment 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2026-03-15' = {
+  parent: familyCosmosAccount
+  name: guid(familyCosmosAccount.name, '71528c84-639b-4d98-8895-a97b10ed3da7', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    principalId: '71528c84-639b-4d98-8895-a97b10ed3da7'
+    roleDefinitionId: '${familyCosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    scope: '${familyCosmosAccount.id}/dbs/${familyNoSQLCosmos.name}'
+  }
+}
+
 resource familyNoSQLCosmos 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2026-03-15' = {
   name: 'vfm'
   parent: familyCosmosAccount
