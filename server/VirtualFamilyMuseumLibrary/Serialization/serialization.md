@@ -6,11 +6,12 @@
 4. Models
 5. Bridge Serializer
 6. Serialization Extensions
-7. Implementing IBridge on a Domain Type
-8. Mapping Between C# .NET 9, JSON, Cosmos DB, Neo4j, and React
-9. Serving the React Client
-10. Known Limitations
-11. Tests
+7. Document Serializer (Cosmos DB)
+8. Implementing IBridge on a Domain Type
+9. Mapping Between C# .NET 9, JSON, Cosmos DB, Neo4j, and React
+10. Serving the React Client
+11. Known Limitations
+12. Tests
 
 # Overview
 The Serialization aspect is the single source of truth for JSON communication between the four places a value lives. **C# .NET 9 is the central hub:** the domain model in `VirtualFamilyMuseumLibrary` sits in the middle, and the other three connect only to it:
@@ -32,6 +33,7 @@ The aspect is small:
 - `Number`: the numeric payload of a `BridgeValue`.
 - `BridgeSerializer`: the `System.Text.Json` converter that turns an `IBridge` into JSON text and back.
 - `SerializationExtensions`: the shared `JsonSerializerOptions` and the typed `Serialize*`/`Deserialize*` helpers for converting between C# primitives and bridges.
+- `DocumentSerializer`: the Cosmos DB adapter. A `CosmosSerializer` that lets the Cosmos SDK read and write documents through `BridgeSerializer`.
 
 # Why JSON Is the Single Source of Truth
 The places a value travels to disagree about what data looks like:
@@ -129,6 +131,93 @@ Not every type has both directions:
 - **`FamilyDate`** has no `SerializeDate`. It implements `IBridge` itself (its `Value` is its `ToString()`), so a `FamilyDate` already is its serialized form. `DeserializeDate` parses the string back through `FamilyDate.GetDate`.
 - **`bool`** has no pair yet. Use `new Bridge(true)` and `(bool)bridge.Value` directly.
 
+# Document Serializer (Cosmos DB)
+`DocumentSerializer` (`DocumentSerializer.cs`) is the Cosmos DB adapter. It subclasses the SDK's `CosmosSerializer` (`Microsoft.Azure.Cosmos` 3.x), so every document the SDK sends or receives passes through `BridgeSerializer`. It's a thin adapter. All JSON reading and writing is done by `BridgeSerializer`, and `DocumentSerializer` only decides which types are allowed and handles the streams.
+
+## Contract
+- **A document is always an object-shaped `IBridge`.** Its `Value` is an `IDictionary<string,BridgeValue>`, whether the document describes a `Person` or a `FamilyDynamic`. The serializer doesn't know or care which.
+- **The serializer never builds a model.** Reads return `IBridge`. Building a `Person` or `FamilyDynamic` is the Domain's job, and the Domain checks the required attributes first. Writes assume the Domain built the model correctly.
+- **Everything sent to Cosmos is an `IBridge`.** That includes documents and query parameter values. Anything else is refused with `NotSupportedException`.
+
+```
+WRITE   Domain builds Person ─► Repository: container.UpsertItemAsync(person, new PartitionKey(person.BirthFamilyName))
+                             ─► DocumentSerializer.ToStream ─► Cosmos DB
+READ    Cosmos DB ─► DocumentSerializer.FromStream<IBridge> ─► Repository returns bridge.Value.AsObject
+                  ─► Domain checks required attributes ─► new Person(dictionary)
+```
+
+## Registration
+The SDK uses whatever serializer is set on `CosmosClientOptions`. Register one `CosmosClient` for the whole app:
+
+```csharp
+CosmosClient client = new(accountEndpoint, new DefaultAzureCredential(), new CosmosClientOptions()
+{
+    Serializer = new DocumentSerializer()
+});
+```
+
+The account disables key authentication (`disableLocalAuth: true` in `cosmos.bicep`), so the client must use a token credential such as `DefaultAzureCredential`.
+
+## Writing: `ToStream<T>(T input)`
+The check is on the **object**, not on `T`, because `T` can't be relied on for writes:
+- C# infers `T` from the argument, so `UpsertItemAsync(person, …)` calls `ToStream<Person>`.
+- The SDK serializes query parameter values with the custom serializer, as `ToStream<object>(value)` (`CosmosSqlQuerySpecJsonConverter`).
+
+| `input` | Result |
+|---|---|
+| Any `IBridge` (`Person`, `FamilyDynamic`, `Bridge`, `FamilyDate`), whatever `T` is | its `Value` written as compact JSON |
+| A raw `string`, an `IDictionary<string,BridgeValue>`, `null`, anything else | `NotSupportedException` |
+
+`input is IBridge` lets one check accept every implementer. The value is then serialized with declared type `IBridge`, so `BridgeSerializer` runs (see Known Limitations for why the declared type matters). The returned `MemoryStream` is rewound to position 0, and the SDK takes ownership and disposes it.
+
+**Query parameters must be wrapped.** A raw `string` parameter reaches `ToStream<object>` and is refused, so wrap parameter values in a `Bridge`:
+
+```csharp
+new QueryDefinition("SELECT * FROM c WHERE c.birthFamilyName = @birthFamilyName")
+    .WithParameter("@birthFamilyName", new Bridge(birthFamilyName));
+
+new QueryDefinition("SELECT * FROM c WHERE c.birthDate = @birthDate")   // exact text match
+    .WithParameter("@birthDate", birthDate);                            // FamilyDate is already an IBridge
+```
+
+Values sent with `PatchItemAsync` also go through the custom serializer, so they must be `IBridge`s too.
+
+## Reading: `FromStream<T>(Stream stream)`
+On a read there's no object yet, only the requested type, so the check is an exact comparison on `T`:
+
+| `T` | When the SDK asks for it | Result |
+|---|---|---|
+| `IBridge` | One document: `ReadItemAsync`, and the response body of create/upsert/replace | a `Bridge` holding the JSON value |
+| `IBridge[]` | A query page: `GetItemQueryIterator<IBridge>` | one `Bridge` per array element, in stream order |
+| Anything else (`Person`, `Bridge`, `object`, `List<IBridge>`, `int[]`, …) | | `NotSupportedException` |
+
+- **Why `IBridge[]`.** For queries, the SDK unwraps the page envelope (`{"Documents":[…],"_count":n}`) and calls `FromStream<T[]>` once per page, where `T` is the type given to the query iterator. `CosmosSerializerCore.FromFeedStream` is the only place a collection type is used, and it's always a plain array. Without this case, every query would throw.
+- **Why exact types and not "anything assignable".** `Bridge` and `object` would also accept the `Bridge` the converter produces, but nothing needs them, and allowing them would let callers depend on the concrete class. `Person` implements `IBridge`, but returning one would mean building a model, which is the Domain's job.
+- **Order.** Elements keep the order of the JSON array. Cosmos only guarantees an order when the query has an `ORDER BY`. The repository's list queries don't need one, because the Domain sorts with `Person.CompareTo`.
+- **Stream ownership.** `FromStream` owns the incoming stream and disposes it on every path, including when it throws.
+- **Aggregates are refused.** `SELECT VALUE COUNT(1) …` read as `GetItemQueryIterator<int>` arrives as `FromStream<int[]>` and throws. Count in memory, or allow that type on purpose.
+
+| Input stream | Result |
+|---|---|
+| A JSON object, read as `IBridge` | `Bridge` whose `Value` is the object |
+| `null`, read as `IBridge` | `Bridge` whose `Value.IsNull` is `true`; never a C# `null` (`HandleNull`) |
+| A JSON array, read as `IBridge[]` | one `Bridge` per element; `[]` gives an empty array |
+| A JSON object, read as `IBridge[]` | `InvalidCastException` from `AsArray` |
+| An empty stream | `JsonException` |
+
+## Cosmos system properties
+Documents read from Cosmos DB include `_rid`, `_self`, `_etag`, `_attachments` and `_ts`. `DocumentSerializer` **keeps** them. It stays generic, and sending them back on the next write is harmless because Cosmos DB overwrites them.
+- The Domain's required-attribute checks ignore them, and `Person.Equals` already ignores extra keys.
+- `_ts` (Unix seconds of the last change) and `_etag` are useful in log lines. Log identifiers, never whole documents, because documents hold names and dates of living people.
+- Controllers and Functions leave out `_`-prefixed keys when building responses, so Cosmos internals never reach React.
+
+## Design notes
+- **One cached `JsonSerializerOptions`.** `GetOptions(false)` is called once into a `static readonly` field. `System.Text.Json` caches type metadata per options instance, so creating new options on every call would rebuild that cache for every read, write and query parameter. The instance is safe to share between threads.
+- **Compact output.** `writeIndented: false` keeps request bodies small.
+- **No LINQ.** `CosmosLinqSerializer` only maps C# property names to JSON names for `GetItemLinqQueryable<T>()`. A dictionary-based document has no properties to map, so the repository uses parameterized SQL through `QueryDefinition`. LINQ is still fine in memory, over models the Domain has built.
+- **Root shape isn't checked.** A document must be a JSON object with a string `id`. If an `IBridge` with another shape is written as a document, Cosmos DB rejects it with 400 Bad Request. The Domain sends only object-shaped documents, so the serializer stays generic.
+- **Packages.** The SDK requires an explicit `Newtonsoft.Json` reference even though this serializer uses only `System.Text.Json`, so the library references both.
+
 # Implementing IBridge on a Domain Type
 A domain type becomes serializable by implementing `IBridge` and returning its canonical JSON value from `Value`. `FamilyDate` (`Models/FamilyDate.cs`) is the reference example:
 
@@ -151,7 +240,7 @@ Guidelines for new types:
 - **Keep business rules out.** `Value` describes the data. It doesn't validate it. Validation belongs outside the model and serialization layers.
 
 # Mapping Between C# .NET 9, JSON, Cosmos DB, Neo4j, and React
-> **Status:** the Cosmos DB and Neo4j adapters, the Web API, and the React client source are not built yet. This section records the contract they must follow. It will be updated as each one is implemented.
+> **Status:** the Cosmos DB serializer (`DocumentSerializer`) is built. The Cosmos DB repository, the Neo4j adapter, the Web API, and the React client source are not built yet. This section records the contract they must follow. It will be updated as each one is implemented.
 
 | `BridgeValue` kind | C# .NET 9 (via extensions) | JSON | Cosmos DB document | Neo4j vertex property | React (JavaScript) |
 |---|---|---|---|---|---|
@@ -165,7 +254,7 @@ Guidelines for new types:
 | object | `IDictionary<string,BridgeValue>` | object | nested object | not representable as a property; see below | plain object |
 
 Consequences for the adapters:
-- **Cosmos DB is a direct mapping.** `BridgeSerializer` output is already a valid document body. The adapter's only extra work is Cosmos DB's own rules: every document needs a string `id` (use `SerializeGuid`), a partition key property, and must not write the system properties (`_rid`, `_self`, `_etag`, `_attachments`, `_ts`).
+- **Cosmos DB is a direct mapping.** `BridgeSerializer` output is already a valid document body, and `DocumentSerializer` passes it to the SDK unchanged. The repository's only extra work is Cosmos DB's own rules: every document needs a string `id` (use `SerializeGuid`), and every call needs the partition key value (`birthFamilyName` for the `person` container, `id` for `familyDynamic`). System properties (`_rid`, `_self`, `_etag`, `_attachments`, `_ts`) may be sent back unchanged, since Cosmos DB overwrites them (see Document Serializer).
 - **Neo4j needs one level of flattening.** A vertex is a single-level map of primitive properties, so the top-level `BridgeValue` for a vertex must be an object whose values are primitives or homogeneous primitive arrays. Nested objects and mixed arrays must either become separate vertices joined by edges (usually right for graph data such as family relationships) or be stored as a JSON string property with `ToString()` / `JsonSerializer.Deserialize<IBridge>`. The Neo4j adapter should make this choice in one place, not leave it to each call site.
 - **Keep the integer/float distinction.** Because `BridgeSerializer` writes whole numbers as integer literals, the Neo4j adapter can pass `TryGetLong` values as `Integer` and everything else as `Float`, so a value written as `3` reads back as `3` and not `3.0`.
 
@@ -203,7 +292,7 @@ These settings belong in a single shared helper, so the API cannot drift from `G
 These were confirmed by running the code as of 2026-09-25 and are not covered by the current tests:
 - **`BridgeValue.ToString()` only works for null, string and boolean values.** It calls `JsonSerializer.Serialize(value, …)` on the raw stored object rather than through `BridgeSerializer`. A number prints as `{}`, and an object or array throws `InvalidCastException` (reflection hits the `AsObject` getter of the nested `BridgeValue`s). `Bridge.ToString()` delegates to it and fails the same way. Serializing `new Bridge(this)` as `IBridge` would route every kind through the converter.
 - **`Number.ToString()` can throw `OverflowException`.** When the fractional digits of a `double` don't fit in an `int` (e.g. `Math.PI`), `Convert.ToInt32(decimalPart)` overflows. `double.ToString()` already drops a trailing `.0`, so that branch can't change the output for any value that does not throw.
-- **The converter only runs for values whose declared type is exactly `IBridge`.** `JsonConverter<IBridge>` only matches `typeof(IBridge)`. Serializing a `FamilyDate` directly, or a C# class with a `FamilyDate` property, falls back to reflection and throws. Declare such members as `IBridge` for now. Supporting concrete types properly would need a `JsonConverterFactory` (or a `CanConvert` override) for writing, plus a per-type way to construct the concrete type when reading.
+- **The converter only runs for values whose declared type is exactly `IBridge`.** `JsonConverter<IBridge>` only matches `typeof(IBridge)`. Serializing a `FamilyDate` directly, or a C# class with a `FamilyDate` property, falls back to reflection and throws. Declare such members as `IBridge` for now. `DocumentSerializer` already does this: it serializes every input with declared type `IBridge`, so a `Person` passed to the Cosmos SDK still goes through the converter. Supporting concrete types properly would need a `JsonConverterFactory` (or a `CanConvert` override) for writing, plus a per-type way to construct the concrete type when reading.
 - **Integers above 2^53 lose precision.** `Read` always calls `reader.GetDouble()`, so `9007199254740993` comes back as `9007199254740992`. This matches Cosmos DB and JavaScript, which both use doubles, but is narrower than Neo4j's 64-bit `Integer`. Avoid numeric identifiers this large; use `Guid`s serialized as strings.
 
 # Tests
@@ -211,6 +300,13 @@ Every type in this aspect has an NUnit fixture in `VirtualFamilyMuseumLibraryTes
 - `BridgeTest.cs`: construction, value equality, hash codes, null-safe operators, and `ToString` for null/string/bool.
 - `BridgeSerializerTest.cs`: reading each token kind, writing each value kind, number-width selection, and round trips.
 - `SerializationExtensionsTest.cs`: `GetOptions`, and every `Serialize*`/`Deserialize*` pair (including `DeserializeDate`) with each failure case.
+- `DocumentSerializerTest.cs`: covers `DocumentSerializer` without a Cosmos DB account.
+  - Writing: a `Person`'s exact keys, values and JSON `null` dates; a rewound stream and compact JSON.
+  - Query-parameter values written as `object` (a string `Bridge` and a `FamilyDate`).
+  - Reading one document: nested values, system properties kept, a JSON `null` body, an empty stream.
+  - Reading a query page: order and count kept, an empty array, an object body read as an array.
+  - Refused types in both directions, and stream disposal on every path.
+  - `Person` round trips, with extra attributes preserved.
 - `Models/BridgeValueTest.cs`: every construction route, the defensive copies, structural equality and hashing, casts and `TryAs*`.
 - `Models/NumberTest.cs`: range and whole-number checks, conversions, and comparison operators.
 
