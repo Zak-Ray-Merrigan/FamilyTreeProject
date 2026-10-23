@@ -228,7 +228,7 @@ public readonly partial struct FamilyDate(string year, Month? month = null, int?
     {
         get
         {
-            return ToString();   // "1940", "Mar 1940", "5 Mar 1940", "1940–1943"
+            return ToString();   // "1940", "Mar 1940", "5 Mar 1940", "1940-1943"
         }
     }
 }
@@ -283,7 +283,7 @@ These settings belong in a single shared helper, so the API cannot drift from `G
 
 **What the React client must assume:**
 - **Identifiers are strings.** JavaScript numbers are exact only up to 2^53 − 1, the same ceiling as `BridgeSerializer.Read` (see Known Limitations). Every identifier crosses the wire as a `Guid` string (`SerializeGuid`) and is compared as a string. Never convert one with `Number(...)`.
-- **`FamilyDate` is display text, not a `Date`.** It arrives as `"1940"`, `"Mar 1940"`, `"5 Mar 1940"`, or a range with an en dash (`"1940–1943"`). Show it as-is. Don't parse it with `new Date(...)`: a partial date would become an invented day, and a range would become `Invalid Date`. When sending a date back, send the same text format; `DeserializeDate` rejects anything `FamilyDate.GetDate` can't parse.
+- **`FamilyDate` is display text, not a `Date`.** It arrives as `"1940"`, `"Mar 1940"`, `"5 Mar 1940"`, or a year range with a hyphen (`"1940-1943"`, the only form `FamilyDate.GetDate` accepts). Show it as-is. The en dash (`–`) is not part of a date: it only separates a birth date from a deceased date in display text such as `"Jane Doe (1900-1910 – 1965)"`. Don't parse it with `new Date(...)`: a partial date would become an invented day, and a range would become `Invalid Date`. When sending a date back, send the same text format; `DeserializeDate` rejects anything `FamilyDate.GetDate` can't parse.
 - **Treat a missing key the same as `null`.** A value that came from Neo4j may be absent rather than `null` (Neo4j doesn't store nulls). Read optional fields with `value ?? fallback`, not `value === null`. When sending, remember that `JSON.stringify` drops keys whose value is `undefined`. Send `null` explicitly when a field must be cleared.
 - **Integers and decimals look the same.** `BridgeSerializer` writes `3` rather than `3.0`, and JavaScript can't tell them apart. Where the difference matters (e.g. a generation number must be whole), the server's `DeserializeInt`/`DeserializeLong` checks it on the way back in. The client should not rely on the JSON text to say so.
 - **Key casing depends on where the key comes from.** Properties of C# classes arrive in camelCase because of the naming policy. Keys inside a `BridgeValue` object arrive exactly as they were stored (see Bridge Serializer). Build those objects with camelCase keys, so the client never sees mixed casing.
